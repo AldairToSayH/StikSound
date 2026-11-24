@@ -1,10 +1,137 @@
 use std::fs;
+use std::net::IpAddr;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use stiksound_audio_engine::{probe_audio, AudioProbeInfo};
 use stiksound_image_engine::{probe_image, ImageProbeInfo};
 use stiksound_project_store::atomic_publish_file;
 use stiksound_video_engine::{run_ffmpeg_mux, VideoContainerProfile, VideoMuxRequest};
+use url::Url;
+
+const MAX_MYINSTANTS_BYTES: usize = 25 * 1024 * 1024;
+const MAX_MYINSTANTS_REDIRECTS: usize = 2;
+
+fn is_disallowed_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            let [a, b, _, _] = v4.octets();
+            v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_broadcast()
+                || v4.is_unspecified()
+                || v4.is_multicast()
+                || (a == 100 && (64..=127).contains(&b))
+                || a >= 224
+        }
+        IpAddr::V6(v6) => {
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_multicast()
+                || ((v6.segments()[0] & 0xfe00) == 0xfc00) // ULA fc00::/7
+                || ((v6.segments()[0] & 0xffc0) == 0xfe80) // link-local fe80::/10
+        }
+    }
+}
+
+fn validate_myinstants_url(raw: &str) -> Result<Url, String> {
+    let parsed = Url::parse(raw.trim()).map_err(|_| "url-rejected: malformed URL".to_string())?;
+    if parsed.scheme() != "https" {
+        return Err("url-rejected: only https allowed".to_string());
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("url-rejected: userinfo forbidden".to_string());
+    }
+    if let Some(port) = parsed.port() {
+        if port != 443 {
+            return Err("url-rejected: non-443 port forbidden".to_string());
+        }
+    }
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| "url-rejected: missing host".to_string())?
+        .to_ascii_lowercase();
+    if host != "www.myinstants.com" && host != "myinstants.com" {
+        return Err(format!("url-rejected: host not allowed ({host})"));
+    }
+    Ok(parsed)
+}
+
+#[tauri::command]
+async fn cmd_fetch_myinstants(url: String) -> Result<Vec<u8>, String> {
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(20))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) StikSound/1.0")
+        .build()
+        .map_err(|e| format!("remote-unavailable: {e}"))?;
+
+    let mut current = validate_myinstants_url(&url)?;
+
+    for hop in 0..=MAX_MYINSTANTS_REDIRECTS {
+        let host = current
+            .host_str()
+            .ok_or_else(|| "url-rejected: missing host".to_string())?;
+        let addrs = tokio::net::lookup_host((host, 443))
+            .await
+            .map_err(|e| format!("remote-unavailable: DNS failed ({e})"))?;
+        let mut saw_addr = false;
+        for addr in addrs {
+            saw_addr = true;
+            if is_disallowed_ip(addr.ip()) {
+                return Err("url-rejected: private or reserved IP address".to_string());
+            }
+        }
+        if !saw_addr {
+            return Err("remote-unavailable: DNS returned no addresses".to_string());
+        }
+
+        let resp = client
+            .get(current.as_str())
+            .send()
+            .await
+            .map_err(|e| format!("remote-unavailable: {e}"))?;
+
+        let status = resp.status();
+        if status.is_redirection() {
+            if hop == MAX_MYINSTANTS_REDIRECTS {
+                return Err("url-rejected: too many redirects".to_string());
+            }
+            let loc = resp
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|v| v.to_str().ok())
+                .ok_or_else(|| "url-rejected: missing redirect location".to_string())?;
+            let next_url = current
+                .join(loc)
+                .map_err(|_| "url-rejected: invalid redirect location".to_string())?;
+            current = validate_myinstants_url(next_url.as_str())?;
+            continue;
+        }
+
+        if !status.is_success() {
+            return Err(format!("remote-unavailable: HTTP {}", status.as_u16()));
+        }
+
+        if let Some(len) = resp.content_length() {
+            if len as usize > MAX_MYINSTANTS_BYTES {
+                return Err("file-too-large: remote response exceeds 25 MB".to_string());
+            }
+        }
+
+        let bytes = resp
+            .bytes()
+            .await
+            .map_err(|e| format!("remote-unavailable: {e}"))?;
+        if bytes.len() > MAX_MYINSTANTS_BYTES {
+            return Err("file-too-large: remote body exceeds 25 MB".to_string());
+        }
+        return Ok(bytes.to_vec());
+    }
+
+    Err("url-rejected: redirect limit exceeded".to_string())
+}
 
 #[tauri::command]
 fn cmd_probe_image(bytes: Vec<u8>) -> Result<ImageProbeInfo, String> {
@@ -153,15 +280,39 @@ fn cmd_copy_artifact_to_clipboard(file_name: String, bytes: Vec<u8>) -> Result<S
     Ok(dest_str)
 }
 
+#[cfg(target_os = "windows")]
+fn ensure_isolated_webview2_data_dir() {
+    if std::env::var_os("WEBVIEW2_USER_DATA_FOLDER").is_some() {
+        return;
+    }
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+        let base = PathBuf::from(local_app_data).join("StikSound").join("wv2");
+        let _ = fs::create_dir_all(&base);
+        // Best-effort cleanup of old unlocked session folders
+        if let Ok(entries) = fs::read_dir(&base) {
+            for entry in entries.flatten() {
+                let _ = fs::remove_dir_all(entry.path());
+            }
+        }
+        let session_dir = base.join(format!("s_{}", std::process::id()));
+        let _ = fs::create_dir_all(&session_dir);
+        std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", &session_dir);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "windows")]
+    ensure_isolated_webview2_data_dir();
+
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             cmd_probe_image,
             cmd_probe_audio,
             cmd_render_video_5s,
             cmd_save_export_to_downloads,
-            cmd_copy_artifact_to_clipboard
+            cmd_copy_artifact_to_clipboard,
+            cmd_fetch_myinstants
         ])
         .run(tauri::generate_context!())
         .expect("error while running StikSound desktop application");

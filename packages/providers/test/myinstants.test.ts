@@ -86,4 +86,25 @@ describe("packages/providers MyInstants & SSRF security", () => {
     expect(resolved.title).toBe("Airhorn Classic");
     expect(resolved.bytes).toEqual(mp3Stub);
   });
+
+  it("handles Spanish share URLs (?utm_source=copy&utm_medium=share), missing trailing slash, and Spanish og:title", async () => {
+    const spanishHtml = `<!doctype html><html><head><meta property="og:title" content="gi steel pipe - Botón de sonido"/></head><body><a href="/media/sounds/gi-steel-pipe.mp3" download>Download</a></body></html>`;
+    const mp3Stub = new Uint8Array([0x49, 0x44, 0x33, 0x03, 0x00]);
+    const requestedUrls: string[] = [];
+    const mockFetch: FetchLike = async (url) => {
+      const s = String(url);
+      requestedUrls.push(s);
+      if (s.endsWith(".mp3")) return new Response(mp3Stub, { status: 200 });
+      return new Response(spanishHtml, { status: 200 });
+    };
+    const provider = new MyInstantsProvider(mockFetch);
+    const resolved = await provider.resolve(
+      "https://www.myinstants.com/es/instant/gi-steel-pipe-91047?utm_source=copy&utm_medium=share"
+    );
+    expect(requestedUrls[0]).toBe("https://www.myinstants.com/es/instant/gi-steel-pipe-91047/");
+    expect(resolved.page_url).toBe("https://www.myinstants.com/es/instant/gi-steel-pipe-91047/");
+    expect(resolved.media_url).toBe("https://www.myinstants.com/media/sounds/gi-steel-pipe.mp3");
+    expect(resolved.title).toBe("gi steel pipe");
+    expect(resolved.bytes).toEqual(mp3Stub);
+  });
 });

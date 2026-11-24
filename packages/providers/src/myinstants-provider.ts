@@ -43,8 +43,11 @@ export class MyInstantsProvider implements SoundProvider {
       throw new StikSoundError("url-rejected", "URL is not a MyInstants instant page or direct media file.");
     }
 
-    // Strip query strings for identity on instant pages
-    const canonicalPageUrl = `${initialUrl.origin}${initialUrl.pathname}`;
+    // Strip query strings and normalize trailing slash for instant pages
+    const normalizedPath = initialUrl.pathname.endsWith("/")
+      ? initialUrl.pathname
+      : `${initialUrl.pathname}/`;
+    const canonicalPageUrl = `${initialUrl.origin}${normalizedPath}`;
     const htmlBytes = await this.fetchLimitedBytes(canonicalPageUrl, 2 * 1024 * 1024);
     const html = new TextDecoder("utf-8", { fatal: false }).decode(htmlBytes);
     const extracted = extractMyInstantsFromHtml(html);
@@ -92,6 +95,12 @@ export class MyInstantsProvider implements SoundProvider {
         continue;
       }
 
+      if (response.status === 413) {
+        throw new StikSoundError("file-too-large", "Remote response exceeds 25 MB limit.");
+      }
+      if (response.status === 403) {
+        throw new StikSoundError("url-rejected", "URL rejected by MyInstants security policy.");
+      }
       if (!response.ok) {
         throw new StikSoundError("remote-unavailable", `HTTP ${response.status} from MyInstants.`);
       }

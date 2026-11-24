@@ -6,6 +6,10 @@ export interface ExtractedMyInstantsPage {
   media_url: string;
 }
 
+const PRIMARY_BUTTON_REGEX =
+  /id=["']instant-page-button(?:-element)?["'][^>]*?(?:data-url|onclick)=["'][^"']*?(\/media\/sounds\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+\.(?:mp3|wav|ogg|m4a))/i;
+const DOWNLOAD_LINK_REGEX =
+  /href=["'](\/media\/sounds\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+\.(?:mp3|wav|ogg|m4a))["'][^>]*?download/i;
 const MEDIA_PATH_REGEX =
   /(?:https:\/\/(?:www\.)?myinstants\.com)?(\/media\/sounds\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+\.(?:mp3|wav|ogg|m4a))(?:\?[^"'\s<>)]*)?/i;
 
@@ -25,7 +29,7 @@ function decodeBasicEntities(input: string): string {
 function cleanTitle(rawTitle: string | null): string | null {
   if (!rawTitle) return null;
   const decoded = decodeBasicEntities(rawTitle)
-    .replace(/\s*[-|]\s*Myinstants.*$/i, "")
+    .replace(/\s*[-|]\s*(?:Myinstants|Bot[oó]n de sonido|Instant Sound Button|Sound Button).*$/i, "")
     .replace(/\s+/g, " ")
     .trim();
   if (!decoded) return null;
@@ -33,7 +37,8 @@ function cleanTitle(rawTitle: string | null): string | null {
 }
 
 export function extractMyInstantsFromHtml(html: string): ExtractedMyInstantsPage {
-  const mediaMatch = html.match(MEDIA_PATH_REGEX);
+  const mediaMatch =
+    html.match(PRIMARY_BUTTON_REGEX) ?? html.match(DOWNLOAD_LINK_REGEX) ?? html.match(MEDIA_PATH_REGEX);
   if (!mediaMatch || !mediaMatch[1]) {
     throw new StikSoundError("remote-unavailable", "No MyInstants media URL found in page HTML.");
   }

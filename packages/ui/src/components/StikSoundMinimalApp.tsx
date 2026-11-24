@@ -35,6 +35,23 @@ export interface StikSoundMinimalAppProps {
 
 const LOCALES = { es: esLocale, en: enLocale } as const;
 
+function audioMimeType(format: string): string {
+  switch (format) {
+    case "mp3":
+      return "audio/mpeg";
+    case "wav":
+      return "audio/wav";
+    case "ogg":
+      return "audio/ogg";
+    case "m4a":
+      return "audio/mp4";
+    case "aac":
+      return "audio/aac";
+    default:
+      return "audio/mpeg";
+  }
+}
+
 export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
   engine,
   providers = [],
@@ -224,7 +241,7 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
     const bytes = project.assets.get(audio.file);
     if (!bytes || typeof Audio === "undefined" || typeof URL.createObjectURL !== "function") return;
 
-    const blob = new Blob([bytes.slice().buffer], { type: `audio/${audio.format}` });
+    const blob = new Blob([bytes.slice().buffer], { type: audioMimeType(audio.format) });
     const url = URL.createObjectURL(blob);
     const el = new Audio(url);
     el.currentTime = assoc.start_ms / 1000;
