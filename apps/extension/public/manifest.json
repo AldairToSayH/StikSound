@@ -3,8 +3,16 @@
   "name": "StikSound",
   "version": "1.0.0",
   "description": "Attach a 5-second sound clip to an existing sticker locally and export a video.",
+  "icons": {
+    "32": "icons/32x32.png",
+    "128": "icons/128x128.png"
+  },
   "action": {
-    "default_title": "StikSound"
+    "default_title": "StikSound",
+    "default_icon": {
+      "32": "icons/32x32.png",
+      "128": "icons/128x128.png"
+    }
   },
   "background": {
     "service_worker": "background.js",

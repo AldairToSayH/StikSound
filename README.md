@@ -6,12 +6,13 @@
 
 **Ponle sonido de hasta 5 segundos a cualquier sticker PNG o GIF animado para WhatsApp — pega tu sticker, elige un audio o link de MyInstants y pégalo directo en WhatsApp sin instalar nada extra.**
 
+[![Release](https://img.shields.io/github/v/release/SilverFeit/StikSound?style=flat-square&label=Download&color=25D366)](https://github.com/SilverFeit/StikSound/releases/latest)
 [![Platforms](https://img.shields.io/badge/Platforms-Windows%20%7C%20macOS%20%7C%20Chrome-25D366?style=flat-square)](#qué-necesitas-instalar)
 [![Zero Deps](https://img.shields.io/badge/Dependencias-Cero%20(100%25%20Autocontenido)-0ea5e9?style=flat-square)](#cómo-funciona-en-3-pasos)
 [![Privacy](https://img.shields.io/badge/Privacidad-100%25%20Local%20(Sin%20Nube)-10b981?style=flat-square)](#privacidad-y-seguridad)
 [![License](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-6366f1?style=flat-square)](LICENSE-MIT)
 
-[**Cómo funciona (3 pasos)**](#cómo-funciona-en-3-pasos) · [**Qué puedes hacer**](#qué-puedes-hacer) · [**Extensión de Chrome**](#usar-como-extensión-de-chrome) · [**Documentación técnica**](#para-desarrolladores)
+[**Descargar (Windows, macOS & Chrome)**](https://github.com/SilverFeit/StikSound/releases/latest) · [**Cómo funciona (3 pasos)**](#cómo-funciona-en-3-pasos) · [**Qué puedes hacer**](#qué-puedes-hacer) · [**Extensión de Chrome**](#usar-como-extensión-de-chrome) · [**Documentación técnica**](#para-desarrolladores)
 
 </div>
 
@@ -63,10 +64,10 @@ Si ya tienes un sticker (o un meme en **PNG** o **GIF animado**) y quieres agreg
 
 ### Usar como extensión de Chrome
 
-1. Descarga o compila la carpeta de la extensión (`apps/extension/dist`).
-2. Abre `chrome://extensions/` en Google Chrome y activa **Modo de desarrollador**.
-3. Haz clic en **Cargar descomprimida** y selecciona `apps/extension/dist`.
-4. Pulsa el ícono de **StikSound** en la barra de Chrome para abrirlo.
+1. Descarga **`StikSound-*-chrome-extension.zip`** desde [**Releases**](https://github.com/SilverFeit/StikSound/releases/latest) y descomprímelo en una carpeta.
+2. Abre `chrome://extensions/` en Google Chrome (o Edge/Brave) y activa **Modo de desarrollador**.
+3. Haz clic en **Cargar descomprimida** y selecciona la carpeta que descomprimiste.
+4. Pulsa el ícono de **StikSound** en la barra de tu navegador para abrirlo al instante.
 
 ---
 
