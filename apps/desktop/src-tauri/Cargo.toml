@@ -18,4 +18,4 @@ stiksound-audio-engine = { path = "../../../crates/audio-engine" }
 stiksound-image-engine = { path = "../../../crates/image-engine" }
 stiksound-project-store = { path = "../../../crates/project-store" }
 stiksound-video-engine = { path = "../../../crates/video-engine" }
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["custom-protocol"] }

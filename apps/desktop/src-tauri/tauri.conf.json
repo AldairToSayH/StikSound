@@ -4,8 +4,6 @@
   "version": "1.0.0",
   "identifier": "app.stiksound.desktop",
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
@@ -15,6 +13,7 @@
         "title": "StikSound",
         "width": 440,
         "height": 540,
+        "center": true,
         "resizable": true,
         "minWidth": 360,
         "minHeight": 460

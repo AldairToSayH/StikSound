@@ -13,11 +13,22 @@
   box-sizing: border-box;
 }
 
+html,
 body {
   margin: 0;
+  height: 100%;
+  overflow: hidden;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   background: var(--bg);
   color: var(--text);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+input,
+textarea {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .stik-shell {
@@ -26,11 +37,12 @@ body {
   flex-direction: column;
   justify-content: space-between;
   width: 100%;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   max-width: 480px;
   margin: 0 auto;
   padding: 14px;
-  gap: 12px;
+  gap: 10px;
 }
 
 .stik-top-corners {
