@@ -1,0 +1,228 @@
+import { describe, expect, it } from "vitest";
+import {
+  ProjectController,
+  StikSoundError,
+  computeSquareCrop,
+  createProject,
+  defaultTrimForDuration,
+  resetProject,
+  sanitizeExportName,
+  slideTrimWindow,
+  validateProjectManifest,
+  type MediaEngine,
+  type ZipEntryInput
+} from "../src/index";
+
+function makeFakeEngine(overrides: Partial<MediaEngine> = {}): MediaEngine {
+  return {
+    async probeImage(bytes) {
+      if (bytes[0] === 0x00) throw new StikSoundError("unsupported-image", "Corrupt image");
+      const isGif = bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46;
+      return {
+        format: isGif ? "gif" : "png",
+        width: 512,
+        height: 512,
+        has_alpha: true,
+        animated: isGif,
+        frame_count: isGif ? 10 : 1,
+        duration_ms: isGif ? 2000 : 0
+      };
+    },
+    async renderSticker() {
+      return { width: 512, height: 512, data: new Uint8Array(512 * 512 * 4) };
+    },
+    async encodeWebp() {
+      return new Uint8Array([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50]);
+    },
+    async probeAudio(bytes) {
+      if (bytes[0] === 0xff && bytes[1] === 0x00) {
+        throw new StikSoundError("unsupported-audio", "Not valid audio");
+      }
+      const durationMs = bytes.byteLength === 4 ? 30_000 : 2500;
+      return { format: "mp3", duration_ms: durationMs, sample_rate: 44100, channels: 2 };
+    },
+    async waveform() {
+      return {
+        buckets: 1024,
+        mins: new Float32Array(1024).fill(-0.5),
+        maxs: new Float32Array(1024).fill(0.5)
+      };
+    },
+    async renderAudio(_bytes, edit) {
+      const durationMs = edit.end_ms - edit.start_ms;
+      return {
+        sampleRate: 48000,
+        channels: 1,
+        samples: new Float32Array(Math.round((durationMs / 1000) * 48000)),
+        durationMs
+      };
+    },
+    async encodeOpus() {
+      return new Uint8Array([0x4f, 0x67, 0x67, 0x53]);
+    },
+    async renderVideo(req) {
+      return {
+        bytes: new Uint8Array([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70]),
+        mimeType: req.container === "webm-alpha" ? "video/webm" : "video/mp4",
+        extension: req.container === "webm-alpha" ? "webm" : "mp4",
+        durationMs: req.endMs - req.startMs,
+        hasAlpha: req.container === "webm-alpha"
+      };
+    },
+    async zip(entries) {
+      return new TextEncoder().encode(
+        JSON.stringify(entries.map((e) => ({ path: e.path, b64: Buffer.from(e.bytes).toString("base64") })))
+      );
+    },
+    async unzip(zipBytes) {
+      const list = JSON.parse(new TextDecoder().decode(zipBytes)) as Array<{ path: string; b64: string }>;
+      return list.map((item): ZipEntryInput => ({
+        path: item.path,
+        bytes: new Uint8Array(Buffer.from(item.b64, "base64"))
+      }));
+    },
+    ...overrides
+  };
+}
+
+describe("packages/core domain and use cases", () => {
+  it("frames default audio trim to max 5000 ms and slides window cleanly", () => {
+    expect(defaultTrimForDuration(30_000)).toEqual({
+      start_ms: 0,
+      end_ms: 5000,
+      volume: 1,
+      fade_in_ms: 0,
+      fade_out_ms: 0
+    });
+    expect(defaultTrimForDuration(2300)).toEqual({
+      start_ms: 0,
+      end_ms: 2300,
+      volume: 1,
+      fade_in_ms: 0,
+      fade_out_ms: 0
+    });
+    expect(slideTrimWindow(12000, 5000, 14000)).toEqual({
+      start_ms: 9000,
+      end_ms: 14000
+    });
+  });
+
+  it("TC-015 & reset: replaces audio resetting trim, keeps audio when replacing sticker, and resets all on X", async () => {
+    const ctrl = new ProjectController(makeFakeEngine());
+    let project = createProject("CatMeme");
+    project = await ctrl.importSticker(project, new Uint8Array([0x89, 0x50, 0x4e, 0x47]), "cat.png");
+    project = await ctrl.importAudioFile(project, new Uint8Array([1, 2, 3, 4]), "long.mp3");
+    project = ctrl.updateAudioEdit(project, { start_ms: 1000, end_ms: 4500 });
+
+    const audioIdBefore = project.manifest.audios[0]!.id;
+    project = await ctrl.importSticker(project, new Uint8Array([0x47, 0x49, 0x46, 0x38]), "cat2.gif");
+    expect(project.manifest.audios[0]!.id).toBe(audioIdBefore);
+    expect(project.manifest.associations[0]!.start_ms).toBe(1000);
+    expect(project.manifest.stickers[0]!.format).toBe("gif");
+
+    project = await ctrl.importAudioFile(project, new Uint8Array([1, 2]), "short.mp3");
+    expect(project.manifest.associations[0]!.start_ms).toBe(0);
+    expect(project.manifest.associations[0]!.end_ms).toBe(2500);
+
+    const cleared = resetProject(project);
+    expect(cleared.manifest.stickers).toHaveLength(0);
+    expect(cleared.manifest.audios).toHaveLength(0);
+    expect(cleared.manifest.associations).toHaveLength(0);
+  });
+
+  it("TC-006: rejects corrupt media without overwriting valid assets", async () => {
+    const ctrl = new ProjectController(makeFakeEngine());
+    let project = createProject("Safe");
+    project = await ctrl.importSticker(project, new Uint8Array([0x89, 0x50, 0x4e, 0x47]), "ok.png");
+
+    await expect(ctrl.importSticker(project, new Uint8Array([0x00, 0x01]), "bad.png")).rejects.toThrowError(
+      StikSoundError
+    );
+    expect(project.manifest.stickers).toHaveLength(1);
+    expect(project.manifest.stickers[0]!.source_name).toBe("ok.png");
+  });
+
+  it("TC-014: rejects trim selections above 5000 ms", async () => {
+    const ctrl = new ProjectController(makeFakeEngine());
+    let project = createProject("TrimTest");
+    project = await ctrl.importSticker(project, new Uint8Array([0x89, 0x50, 0x4e, 0x47]), "ok.png");
+    project = await ctrl.importAudioFile(project, new Uint8Array([1, 2, 3, 4]), "30s.mp3");
+
+    expect(() => ctrl.updateAudioEdit(project, { start_ms: 0, end_ms: 6000 })).toThrowError(
+      /trim-out-of-range/
+    );
+  });
+
+  it("exports video-mp4 by default, supports sound-bundle (TC-008), and blocks native-sound-sticker", async () => {
+    const engine = makeFakeEngine();
+    const ctrl = new ProjectController(engine);
+    let project = createProject("My Sound!");
+    project = await ctrl.importSticker(project, new Uint8Array([0x89, 0x50, 0x4e, 0x47]), "ok.png");
+    project = await ctrl.importAudioFile(project, new Uint8Array([1, 2, 3, 4]), "30s.mp3");
+
+    const mp4 = await ctrl.exportProject(project);
+    expect(mp4.profile).toBe("video-mp4");
+    expect(mp4.fileName).toBe("my-sound-5s.mp4");
+    expect(mp4.durationMs).toBe(5000);
+
+    const bundle = await ctrl.exportProject(project, "sound-bundle");
+    expect(bundle.fileName).toBe("my-sound-stiksound.zip");
+    const entries = await engine.unzip(bundle.bytes);
+    expect(entries.map((e) => e.path).sort()).toEqual(["manifest.json", "sound.ogg", "sticker.webp"]);
+    const bundleManifest = JSON.parse(new TextDecoder().decode(entries.find((e) => e.path === "manifest.json")!.bytes));
+    expect(bundleManifest.bundle.whatsapp_native).toBe(false);
+    expect(() => validateProjectManifest(bundleManifest)).not.toThrow();
+
+    await expect(ctrl.exportProject(project, "native-sound-sticker")).rejects.toMatchObject({
+      code: "export-unsupported"
+    });
+  });
+
+  it("TC-009, SEC-008 & SEC-010: saves/reopens project and blocks path traversal", async () => {
+    const ctrl = new ProjectController(makeFakeEngine());
+    let project = createProject("../../escape");
+    expect(sanitizeExportName(project.manifest.project.name)).toBe("escape");
+    expect(sanitizeExportName("..//..")).toBe("stiksound");
+
+    project = await ctrl.importSticker(project, new Uint8Array([0x89, 0x50, 0x4e, 0x47]), "ok.png");
+    project = await ctrl.importAudioFile(project, new Uint8Array([1, 2, 3, 4]), "30s.mp3");
+    const savedZip = await ctrl.saveProject(project);
+    const reopened = await ctrl.openProject(savedZip);
+    expect(reopened.manifest.associations[0]!.end_ms).toBe(5000);
+
+    const badManifest = structuredClone(project.manifest);
+    badManifest.stickers[0]!.file = "assets/../etc/passwd";
+    expect(() => validateProjectManifest(badManifest)).toThrowError(/package-invalid/);
+  });
+
+  it("computes 1:1 square crop from center by default and respects input-driven resolution <= 512", () => {
+    // 1000x500 wide image -> cropSide 500, outputSize 500, centered srcX = 250
+    expect(computeSquareCrop(1000, 500)).toEqual({
+      srcX: 250,
+      srcY: 0,
+      cropSide: 500,
+      outputSize: 500
+    });
+    // Mouse hover panned to right edge (cropX = 1)
+    expect(computeSquareCrop(1000, 500, 1, 0.5)).toEqual({
+      srcX: 500,
+      srcY: 0,
+      cropSide: 500,
+      outputSize: 500
+    });
+    // Smaller 192x192 input stays 192x192 (never upscaled)
+    expect(computeSquareCrop(192, 192)).toEqual({
+      srcX: 0,
+      srcY: 0,
+      cropSide: 192,
+      outputSize: 192
+    });
+    // Large 1920x1080 caps at 512x512
+    expect(computeSquareCrop(1920, 1080, 0.5, 0.5)).toEqual({
+      srcX: 420,
+      srcY: 0,
+      cropSide: 1080,
+      outputSize: 512
+    });
+  });
+});
