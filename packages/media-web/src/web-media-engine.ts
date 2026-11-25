@@ -104,17 +104,21 @@ export function prepareAnimatedGifFrames(
   const isWebm = request.container === "webm-alpha";
   const cropX = request.cropX ?? 0.5;
   const cropY = request.cropY ?? 0.5;
+  const prepared: DecodedGifFrame[] = [];
 
-  return decoded.map((frame) => {
+  for (const frame of decoded) {
     const cropped = cropAndFitSquareRgba(frame.rgba, frame.width, frame.height, cropX, cropY);
     const rgba = isWebm ? cropped.data : compositeRgbaOnMatte(cropped, request.matteColor);
-    return {
+    prepared.push({
       width: cropped.width,
       height: cropped.height,
       delayMs: frame.delayMs,
       rgba
-    };
-  });
+    });
+    frame.rgba = new Uint8Array(0);
+  }
+
+  return prepared;
 }
 
 export class WebMediaEngine implements MediaEngine {
@@ -678,7 +682,10 @@ export class WebMediaEngine implements MediaEngine {
               });
               gifCycleMs = Math.max(1, acc);
             }
-          } catch {
+          } catch (error) {
+            if (error instanceof StikSoundError && error.code === "file-too-large") {
+              throw error;
+            }
             gifImageDatas = null;
           }
         }
@@ -820,7 +827,10 @@ export class WebMediaEngine implements MediaEngine {
         const gifFrames = prepareAnimatedGifFrames(request);
         decodedCanvases = gifFrames.map((f) => drawFrameOnCanvas(f.rgba, f.width, true));
         timings = gifFrames.map((f, frameIndex) => ({ frameIndex, delayMs: f.delayMs }));
-      } catch {
+      } catch (error) {
+        if (error instanceof StikSoundError && error.code === "file-too-large") {
+          throw error;
+        }
         decodedCanvases = [];
         timings = [];
       }

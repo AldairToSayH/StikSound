@@ -1,6 +1,7 @@
 use std::io::Cursor;
+use std::num::NonZeroU64;
 
-use gif::{DecodeOptions, DisposalMethod};
+use gif::{DecodeOptions, DisposalMethod, MemoryLimit};
 use image::imageops::FilterType;
 use image::{DynamicImage, ImageDecoder, ImageFormat as ImgFmt, ImageReader, Rgba, RgbaImage};
 use serde::{Deserialize, Serialize};
@@ -9,6 +10,10 @@ use thiserror::Error;
 pub const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
 pub const MAX_IMAGE_DIMENSION: u32 = 8000;
 pub const MAX_IMAGE_PIXELS: u64 = 40_000_000;
+pub const MAX_GIF_FRAMES: usize = 300;
+pub const MAX_GIF_CANVAS_BYTES: u64 = 64 * 1024 * 1024;
+pub const MAX_GIF_FRAME_PIXELS: u64 = 16_777_216;
+pub const MAX_GIF_DECODED_BYTES: u64 = 256 * 1024 * 1024;
 pub const STICKER_SIZE_PX: u32 = 512;
 pub const MAX_STATIC_WEBP_BYTES: usize = 102_400;
 
@@ -91,6 +96,169 @@ fn check_dimension_limits(width: u32, height: u32) -> Result<(), ImageEngineErro
     Ok(())
 }
 
+fn gif_decoder_options() -> DecodeOptions {
+    let mut opts = DecodeOptions::new();
+    opts.set_color_output(gif::ColorOutput::RGBA);
+    opts.set_memory_limit(MemoryLimit::Bytes(
+        NonZeroU64::new(MAX_GIF_CANVAS_BYTES).expect("GIF canvas limit is non-zero"),
+    ));
+    opts
+}
+
+fn gif_canvas_bytes(width: u32, height: u32) -> Result<u64, ImageEngineError> {
+    check_dimension_limits(width, height)?;
+    let pixels = u64::from(width) * u64::from(height);
+    if pixels > MAX_GIF_FRAME_PIXELS {
+        return Err(ImageEngineError::FileTooLarge(format!(
+            "GIF canvas {width}x{height} exceeds {MAX_GIF_FRAME_PIXELS} pixel GIF limit"
+        )));
+    }
+    let bytes = pixels
+        .checked_mul(4)
+        .ok_or_else(|| ImageEngineError::FileTooLarge("GIF canvas size overflow".to_string()))?;
+    if bytes > MAX_GIF_CANVAS_BYTES {
+        return Err(ImageEngineError::FileTooLarge(format!(
+            "GIF canvas allocation of {bytes} bytes exceeds {MAX_GIF_CANVAS_BYTES} byte GIF limit"
+        )));
+    }
+    Ok(bytes)
+}
+
+fn gif_frame_pixels(
+    canvas_width: u32,
+    canvas_height: u32,
+    left: u32,
+    top: u32,
+    width: u32,
+    height: u32,
+) -> Result<u64, ImageEngineError> {
+    if width == 0 || height == 0 {
+        return Err(ImageEngineError::UnsupportedImage(
+            "GIF frame has zero dimensions".to_string(),
+        ));
+    }
+    if width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION {
+        return Err(ImageEngineError::FileTooLarge(format!(
+            "GIF frame dimension {width}x{height} exceeds {MAX_IMAGE_DIMENSION}px limit"
+        )));
+    }
+    let pixels = u64::from(width) * u64::from(height);
+    if pixels > MAX_GIF_FRAME_PIXELS {
+        return Err(ImageEngineError::FileTooLarge(format!(
+            "GIF frame {width}x{height} exceeds {MAX_GIF_FRAME_PIXELS} pixel GIF limit"
+        )));
+    }
+    if u64::from(left) + u64::from(width) > u64::from(canvas_width)
+        || u64::from(top) + u64::from(height) > u64::from(canvas_height)
+    {
+        return Err(ImageEngineError::UnsupportedImage(format!(
+            "GIF frame bounds ({left},{top} {width}x{height}) exceed the {canvas_width}x{canvas_height} canvas"
+        )));
+    }
+    Ok(pixels)
+}
+
+fn gif_rgba_bytes(pixels: u64) -> Result<u64, ImageEngineError> {
+    pixels
+        .checked_mul(4)
+        .ok_or_else(|| ImageEngineError::FileTooLarge("GIF RGBA size overflow".to_string()))
+}
+
+fn check_gif_decoded_memory(
+    retained_bytes: u64,
+    next_retained_bytes: u64,
+    working_bytes: u64,
+) -> Result<(), ImageEngineError> {
+    let total = retained_bytes
+        .checked_add(next_retained_bytes)
+        .and_then(|value| value.checked_add(working_bytes))
+        .ok_or_else(|| {
+            ImageEngineError::FileTooLarge("GIF decoded memory size overflow".to_string())
+        })?;
+    if total > MAX_GIF_DECODED_BYTES {
+        return Err(ImageEngineError::FileTooLarge(format!(
+            "GIF decoded RGBA memory {total} exceeds {MAX_GIF_DECODED_BYTES} byte limit"
+        )));
+    }
+    Ok(())
+}
+
+fn alloc_zeroed_vec(len: usize) -> Result<Vec<u8>, ImageEngineError> {
+    let mut buffer = Vec::new();
+    buffer.try_reserve_exact(len).map_err(|_| {
+        ImageEngineError::FileTooLarge(format!("GIF allocation of {len} bytes failed"))
+    })?;
+    buffer.resize(len, 0);
+    Ok(buffer)
+}
+
+fn alloc_rgba_image(width: u32, height: u32) -> Result<RgbaImage, ImageEngineError> {
+    let pixels = u64::from(width) * u64::from(height);
+    let bytes = gif_rgba_bytes(pixels)?;
+    let len = usize::try_from(bytes).map_err(|_| {
+        ImageEngineError::FileTooLarge("GIF canvas size is not addressable".to_string())
+    })?;
+    let buffer = alloc_zeroed_vec(len)?;
+    RgbaImage::from_raw(width, height, buffer)
+        .ok_or_else(|| ImageEngineError::UnsupportedImage("Invalid RGBA canvas".to_string()))
+}
+
+fn snapshot_region(
+    image: &RgbaImage,
+    left: u32,
+    top: u32,
+    width: u32,
+    height: u32,
+) -> Result<Vec<u8>, ImageEngineError> {
+    let row_bytes = usize::try_from(gif_rgba_bytes(u64::from(width))?).map_err(|_| {
+        ImageEngineError::FileTooLarge("GIF disposal row is not addressable".to_string())
+    })?;
+    let total = row_bytes
+        .checked_mul(usize::try_from(height).map_err(|_| {
+            ImageEngineError::FileTooLarge("GIF disposal region is not addressable".to_string())
+        })?)
+        .ok_or_else(|| {
+            ImageEngineError::FileTooLarge("GIF disposal region size overflow".to_string())
+        })?;
+    let mut region = alloc_zeroed_vec(total)?;
+    let raw = image.as_raw();
+    let stride = usize::try_from(image.width()).map_err(|_| {
+        ImageEngineError::FileTooLarge("GIF canvas stride is not addressable".to_string())
+    })?;
+    for y in 0..usize::try_from(height).map_err(|_| {
+        ImageEngineError::FileTooLarge("GIF disposal region is not addressable".to_string())
+    })? {
+        let src = ((usize::try_from(top).map_err(|_| {
+            ImageEngineError::FileTooLarge("GIF disposal offset is not addressable".to_string())
+        })? + y)
+            * stride
+            + usize::try_from(left).map_err(|_| {
+                ImageEngineError::FileTooLarge("GIF disposal offset is not addressable".to_string())
+            })?)
+            * 4;
+        let dst = y * row_bytes;
+        region[dst..dst + row_bytes].copy_from_slice(&raw[src..src + row_bytes]);
+    }
+    Ok(region)
+}
+
+fn restore_region(
+    image: &mut RgbaImage,
+    region: &[u8],
+    left: u32,
+    top: u32,
+    width: u32,
+    height: u32,
+) {
+    let row_bytes = width as usize * 4;
+    let stride = image.width() as usize;
+    for y in 0..height as usize {
+        let dst = ((top as usize + y) * stride + left as usize) * 4;
+        let src = y * row_bytes;
+        image.as_mut()[dst..dst + row_bytes].copy_from_slice(&region[src..src + row_bytes]);
+    }
+}
+
 fn webp_is_animated(bytes: &[u8]) -> bool {
     if bytes.len() >= 21 && &bytes[12..16] == b"VP8X" {
         let flags = bytes[20];
@@ -100,29 +268,44 @@ fn webp_is_animated(bytes: &[u8]) -> bool {
 }
 
 fn inspect_gif(bytes: &[u8]) -> Result<(u32, u32, bool, usize, u32), ImageEngineError> {
-    let mut opts = DecodeOptions::new();
-    opts.set_color_output(gif::ColorOutput::RGBA);
+    let opts = gif_decoder_options();
     let mut decoder = opts
         .read_info(Cursor::new(bytes))
         .map_err(|e| ImageEngineError::UnsupportedImage(format!("Invalid GIF header: {e}")))?;
 
     let width = u32::from(decoder.width());
     let height = u32::from(decoder.height());
-    check_dimension_limits(width, height)?;
+    let _ = gif_canvas_bytes(width, height)?;
 
     let mut frame_count = 0usize;
     let mut total_ms = 0u32;
     let mut has_alpha = false;
 
-    while let Some(frame) = decoder
-        .read_next_frame()
-        .map_err(|e| ImageEngineError::UnsupportedImage(format!("Corrupt GIF frame: {e}")))?
-    {
+    loop {
+        let info = match decoder
+            .next_frame_info()
+            .map_err(|e| ImageEngineError::UnsupportedImage(format!("Corrupt GIF frame: {e}")))?
+        {
+            Some(frame) => frame,
+            None => break,
+        };
+        if frame_count >= MAX_GIF_FRAMES {
+            return Err(ImageEngineError::FileTooLarge(format!(
+                "GIF exceeds the {MAX_GIF_FRAMES} frame limit"
+            )));
+        }
+        let _ = gif_frame_pixels(
+            width,
+            height,
+            u32::from(info.left),
+            u32::from(info.top),
+            u32::from(info.width),
+            u32::from(info.height),
+        )?;
         frame_count += 1;
-        // GIF delay is in 10ms units; standard browser/player floor for 0 is 100ms (10cs)
-        let delay_cs = if frame.delay == 0 { 10 } else { frame.delay };
+        let delay_cs = if info.delay == 0 { 10 } else { info.delay };
         total_ms = total_ms.saturating_add(u32::from(delay_cs) * 10);
-        if !has_alpha && frame.buffer.chunks_exact(4).any(|px| px[3] < 255) {
+        if !has_alpha && info.transparent.is_some() {
             has_alpha = true;
         }
     }
@@ -247,7 +430,7 @@ pub fn contain_fit_rgba_512(src: &RgbaImage) -> RgbaImage {
 pub fn render_sticker_512(bytes: &[u8]) -> Result<RgbaImage, ImageEngineError> {
     let info = probe_image(bytes)?;
     if info.format == StickerImageFormat::Gif {
-        let frames = decode_gif_frames_512(bytes)?;
+        let frames = decode_gif_frames_512_inner(bytes, 1, false)?;
         let first = frames
             .into_iter()
             .next()
@@ -271,90 +454,116 @@ pub fn render_sticker_512(bytes: &[u8]) -> Result<RgbaImage, ImageEngineError> {
 /// Decodes all GIF frames with disposal methods applied so transparency is preserved
 /// across frames, and contain-fits every frame onto 512x512 RGBA.
 pub fn decode_gif_frames_512(bytes: &[u8]) -> Result<Vec<GifFrame512>, ImageEngineError> {
+    decode_gif_frames_512_inner(bytes, MAX_GIF_FRAMES, true)
+}
+
+fn decode_gif_frames_512_inner(
+    bytes: &[u8],
+    max_frames: usize,
+    reject_extra: bool,
+) -> Result<Vec<GifFrame512>, ImageEngineError> {
     if bytes.len() > MAX_IMAGE_BYTES {
         return Err(ImageEngineError::FileTooLarge("GIF exceeds 20 MB limit".to_string()));
     }
-    let mut opts = DecodeOptions::new();
-    opts.set_color_output(gif::ColorOutput::RGBA);
+    let opts = gif_decoder_options();
     let mut decoder = opts
         .read_info(Cursor::new(bytes))
         .map_err(|e| ImageEngineError::UnsupportedImage(format!("Invalid GIF: {e}")))?;
-
     let canvas_w = u32::from(decoder.width());
     let canvas_h = u32::from(decoder.height());
-    check_dimension_limits(canvas_w, canvas_h)?;
-
-    let mut current_canvas = RgbaImage::from_pixel(canvas_w, canvas_h, Rgba([0, 0, 0, 0]));
+    let canvas_bytes = gif_canvas_bytes(canvas_w, canvas_h)?;
+    let mut current_canvas = alloc_rgba_image(canvas_w, canvas_h)?;
+    let output_bytes = u64::from(STICKER_SIZE_PX) * u64::from(STICKER_SIZE_PX) * 4;
+    let mut retained_out_bytes = 0u64;
     let mut out = Vec::new();
-
-    while let Some(frame) = decoder
-        .read_next_frame()
-        .map_err(|e| ImageEngineError::UnsupportedImage(format!("Corrupt GIF frame: {e}")))?
-    {
-        let prev_canvas = if frame.dispose == DisposalMethod::Previous {
-            Some(current_canvas.clone())
+    loop {
+        let info = match decoder
+            .next_frame_info()
+            .map_err(|e| ImageEngineError::UnsupportedImage(format!("Corrupt GIF: {e}")))?
+        {
+            Some(frame) => frame,
+            None => break,
+        };
+        if out.len() >= max_frames {
+            if reject_extra {
+                return Err(ImageEngineError::FileTooLarge(format!(
+                    "GIF exceeds the {MAX_GIF_FRAMES} frame limit"
+                )));
+            }
+            break;
+        }
+        let frame_width = u32::from(info.width);
+        let frame_height = u32::from(info.height);
+        let frame_left = u32::from(info.left);
+        let frame_top = u32::from(info.top);
+        let frame_pixels =
+            gif_frame_pixels(canvas_w, canvas_h, frame_left, frame_top, frame_width, frame_height)?;
+        let frame_bytes = gif_rgba_bytes(frame_pixels)?;
+        let needs_previous = info.dispose == DisposalMethod::Previous;
+        let frame_dispose = info.dispose;
+        let delay_cs = if info.delay == 0 { 10 } else { info.delay };
+        let working_bytes = canvas_bytes
+            + frame_bytes
+            + if needs_previous { frame_bytes } else { 0 }
+            + output_bytes * 2;
+        check_gif_decoded_memory(retained_out_bytes, output_bytes, working_bytes)?;
+        let buffer_size = decoder.buffer_size();
+        let expected_buffer_size = usize::try_from(frame_bytes).map_err(|_| {
+            ImageEngineError::FileTooLarge("GIF frame buffer is not addressable".to_string())
+        })?;
+        if buffer_size != expected_buffer_size {
+            return Err(ImageEngineError::UnsupportedImage(
+                "GIF frame buffer size mismatch".to_string(),
+            ));
+        }
+        let mut frame_rgba = alloc_zeroed_vec(buffer_size)?;
+        decoder
+            .read_into_buffer(&mut frame_rgba)
+            .map_err(|e| ImageEngineError::UnsupportedImage(format!("Corrupt GIF: {e}")))?;
+        let prev_region = if needs_previous {
+            Some(snapshot_region(&current_canvas, frame_left, frame_top, frame_width, frame_height)?)
         } else {
             None
         };
-
-        let fx = u32::from(frame.left);
-        let fy = u32::from(frame.top);
-        let fw = u32::from(frame.width);
-        let fh = u32::from(frame.height);
-
-        for y in 0..fh {
-            for x in 0..fw {
-                let cx = fx + x;
-                let cy = fy + y;
-                if cx < canvas_w && cy < canvas_h {
-                    let idx = ((y * fw + x) * 4) as usize;
-                    if idx + 3 < frame.buffer.len() {
-                        let a = frame.buffer[idx + 3];
-                        if a > 0 {
-                            current_canvas.put_pixel(
-                                cx,
-                                cy,
-                                Rgba([
-                                    frame.buffer[idx],
-                                    frame.buffer[idx + 1],
-                                    frame.buffer[idx + 2],
-                                    a,
-                                ]),
-                            );
-                        }
-                    }
+        for y in 0..frame_height {
+            for x in 0..frame_width {
+                let idx = ((y * frame_width + x) * 4) as usize;
+                let a = frame_rgba[idx + 3];
+                if a > 0 {
+                    let cx = frame_left + x;
+                    let cy = frame_top + y;
+                    current_canvas.put_pixel(
+                        cx,
+                        cy,
+                        Rgba([frame_rgba[idx], frame_rgba[idx + 1], frame_rgba[idx + 2], a]),
+                    );
                 }
             }
         }
-
         let fitted = contain_fit_rgba_512(&current_canvas);
-        let delay_cs = if frame.delay == 0 { 10 } else { frame.delay };
         out.push(GifFrame512 {
             delay_ms: u32::from(delay_cs) * 10,
             rgba: fitted.into_raw(),
         });
-
-        match frame.dispose {
+        retained_out_bytes += output_bytes;
+        match frame_dispose {
             DisposalMethod::Background => {
-                for y in 0..fh {
-                    for x in 0..fw {
-                        let cx = fx + x;
-                        let cy = fy + y;
-                        if cx < canvas_w && cy < canvas_h {
-                            current_canvas.put_pixel(cx, cy, Rgba([0, 0, 0, 0]));
-                        }
+                for y in 0..frame_height {
+                    for x in 0..frame_width {
+                        let cx = frame_left + x;
+                        let cy = frame_top + y;
+                        current_canvas.put_pixel(cx, cy, Rgba([0, 0, 0, 0]));
                     }
                 }
             }
             DisposalMethod::Previous => {
-                if let Some(prev) = prev_canvas {
-                    current_canvas = prev;
+                if let Some(region) = prev_region.as_deref() {
+                    restore_region(&mut current_canvas, region, frame_left, frame_top, frame_width, frame_height);
                 }
             }
             DisposalMethod::Any | DisposalMethod::Keep => {}
         }
     }
-
     if out.is_empty() {
         return Err(ImageEngineError::UnsupportedImage(
             "GIF contained zero frames".to_string(),
