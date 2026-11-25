@@ -275,7 +275,7 @@ fn inspect_gif(bytes: &[u8]) -> Result<(u32, u32, bool, usize, u32), ImageEngine
 
     let width = u32::from(decoder.width());
     let height = u32::from(decoder.height());
-    let _ = gif_canvas_bytes(width, height)?;
+    let canvas_bytes = gif_canvas_bytes(width, height)?;
 
     let mut frame_count = 0usize;
     let mut total_ms = 0u32;
@@ -316,7 +316,71 @@ fn inspect_gif(bytes: &[u8]) -> Result<(u32, u32, bool, usize, u32), ImageEngine
         ));
     }
 
+    check_export_gif_decoded_memory(bytes, width, height, canvas_bytes)?;
+
     Ok((width, height, has_alpha, frame_count, total_ms))
+}
+
+/// Transient bytes the TypeScript export decoder (`decodeGifFramesRgba` in
+/// `packages/media-web`) holds while it decodes one frame. Mirrors
+/// `gifFrameWorkingBytes` in `packages/media-web/src/gif-limits.ts`: working
+/// canvas, joined LZW data, LZW index output (doubled when interlaced) and the
+/// saved region for `DisposalMethod::Previous`.
+fn export_gif_frame_working_bytes(
+    canvas_bytes: u64,
+    lzw_data_bytes: u64,
+    frame_pixels: u64,
+    interlaced: bool,
+    dispose: DisposalMethod,
+) -> u64 {
+    let index_bytes = frame_pixels * if interlaced { 2 } else { 1 };
+    let previous_bytes = if dispose == DisposalMethod::Previous { frame_pixels * 4 } else { 0 };
+    canvas_bytes + lzw_data_bytes + index_bytes + previous_bytes
+}
+
+/// The desktop app probes images with this crate but exports with the
+/// TypeScript decoder, which retains one canvas-sized RGBA frame per frame.
+/// Applying that budget here makes a GIF that passes the probe also pass
+/// export. Call only after every frame descriptor has been validated, because
+/// reading compressed frame data reserves a buffer sized from the descriptor.
+fn check_export_gif_decoded_memory(
+    bytes: &[u8],
+    width: u32,
+    height: u32,
+    canvas_bytes: u64,
+) -> Result<(), ImageEngineError> {
+    let mut opts = gif_decoder_options();
+    opts.skip_frame_decoding(true);
+    let mut decoder = opts
+        .read_info(Cursor::new(bytes))
+        .map_err(|e| ImageEngineError::UnsupportedImage(format!("Invalid GIF header: {e}")))?;
+    let mut retained_bytes = 0u64;
+    while let Some(frame) = decoder
+        .read_next_frame()
+        .map_err(|e| ImageEngineError::UnsupportedImage(format!("Corrupt GIF frame: {e}")))?
+    {
+        let frame_pixels = gif_frame_pixels(
+            width,
+            height,
+            u32::from(frame.left),
+            u32::from(frame.top),
+            u32::from(frame.width),
+            u32::from(frame.height),
+        )?;
+        // With skip_frame_decoding the buffer holds the LZW minimum code size
+        // byte followed by the compressed data.
+        let lzw_data_bytes = frame.buffer.len().saturating_sub(1) as u64;
+        let working_bytes = export_gif_frame_working_bytes(
+            canvas_bytes,
+            lzw_data_bytes,
+            frame_pixels,
+            frame.interlaced,
+            frame.dispose,
+        );
+        check_gif_decoded_memory(retained_bytes, canvas_bytes, working_bytes)?;
+        retained_bytes += canvas_bytes;
+    }
+    Ok(())
 }
 
 pub fn probe_image(bytes: &[u8]) -> Result<ImageProbeInfo, ImageEngineError> {
@@ -793,6 +857,15 @@ mod tests {
     }
 
     fn make_many_frame_gif(frame_count: usize, width: u32, height: u32) -> Vec<u8> {
+        make_many_frame_gif_with_dispose(frame_count, width, height, DisposalMethod::Keep)
+    }
+
+    fn make_many_frame_gif_with_dispose(
+        frame_count: usize,
+        width: u32,
+        height: u32,
+        dispose: DisposalMethod,
+    ) -> Vec<u8> {
         let mut buf = Vec::new();
         let palette = &[0u8, 0, 0, 255, 0, 0, 0, 255, 0];
         {
@@ -802,6 +875,7 @@ mod tests {
                 let pixels = vec![0u8; (width * height) as usize];
                 let mut frame = Frame::from_indexed_pixels(width as u16, height as u16, pixels, Some(0));
                 frame.delay = 10;
+                frame.dispose = dispose;
                 encoder.write_frame(&frame).unwrap();
             }
         }
@@ -850,6 +924,35 @@ mod tests {
         let gif = make_many_frame_gif(MAX_GIF_FRAMES, 512, 512);
         let err = decode_gif_frames_512(&gif).unwrap_err();
         assert!(matches!(err, ImageEngineError::FileTooLarge(_)));
+        let err = probe_image(&gif).unwrap_err();
+        assert!(matches!(err, ImageEngineError::FileTooLarge(_)));
+    }
+
+    // The desktop app probes with this crate but exports with the TypeScript
+    // decoder, which retains one canvas-sized RGBA frame (1 MiB at 512x512) per
+    // frame. The 256 MiB budget fits 254 plain frames, or 253 when each frame
+    // keeps a disposal buffer. These counts match packages/media-web tests.
+    #[test]
+    fn gif_probe_applies_export_decoded_memory_budget() {
+        let cases = [
+            (254, DisposalMethod::Keep, true),
+            (255, DisposalMethod::Keep, false),
+            (253, DisposalMethod::Previous, true),
+            (254, DisposalMethod::Previous, false),
+        ];
+        for (count, dispose, accepted) in cases {
+            let gif = make_many_frame_gif_with_dispose(count, 512, 512, dispose);
+            let result = probe_image(&gif);
+            if accepted {
+                let probe = result.unwrap_or_else(|e| panic!("{count} frames {dispose:?}: {e}"));
+                assert_eq!(probe.frame_count, count);
+            } else {
+                assert!(
+                    matches!(result, Err(ImageEngineError::FileTooLarge(_))),
+                    "{count} frames {dispose:?} should be rejected, got {result:?}"
+                );
+            }
+        }
     }
 
     #[test]
