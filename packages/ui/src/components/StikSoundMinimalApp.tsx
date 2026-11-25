@@ -407,7 +407,7 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
     setStatusMessage(copy.copiedReadyToast);
   };
 
-  // Arrow (➔): generates the most compatible preview & copies to clipboard for WhatsApp sticker paste
+  // Arrow (➔): encodes the current video and copies it. Pasting it in a chat sends a video, not a sticker.
   const handlePreviewAndCopyArrow = async () => {
     if (!canExport) return;
     stopPlayback();
@@ -446,7 +446,11 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
       const artifact = await controller.exportProject(project, formatProfile, maxDurationMs);
       await shell.saveArtifact(artifact);
       setStatusMessage(
-        artifact.profile === "sound-bundle" ? copy.exportSuccessBundle : copy.exportSuccessVideo
+        artifact.profile === "sound-bundle"
+          ? copy.exportSuccessBundle
+          : artifact.profile === "standard-webp"
+            ? copy.exportSuccessWebp
+            : copy.exportSuccessVideo
       );
     } catch (err) {
       handleError(err);
