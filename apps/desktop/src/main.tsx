@@ -1,11 +1,12 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
-import type {
-  AudioProbeInfo,
-  ExportArtifact,
-  ImageProbeInfo,
-  MediaEngine
+import {
+  detectLocale,
+  type AudioProbeInfo,
+  type ExportArtifact,
+  type ImageProbeInfo,
+  type MediaEngine
 } from "@stiksound/core";
 import { WebMediaEngine } from "@stiksound/media-web";
 import { MyInstantsProvider, type FetchLike } from "@stiksound/providers";
@@ -89,7 +90,7 @@ const shell: ShellBridge = {
   }
 };
 
-const locale = navigator.language.toLowerCase().startsWith("es") ? "es" : "en";
+const locale = detectLocale(navigator.language);
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

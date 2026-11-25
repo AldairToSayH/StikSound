@@ -15,6 +15,8 @@
 
 [**Usar en la Web**](https://silverfeit.github.io/StikSound/) · [**Descargar**](https://github.com/SilverFeit/StikSound/releases/latest) · [**Guía de uso**](#guía-de-uso-paso-a-paso) · [**Cómo funciona internamente**](#cómo-funciona-internamente) · [**Desarrollo**](#desarrollo)
 
+**🌐 Idioma / Language / Idioma:** **🇪🇸 Español (Principal)** · [**🇺🇸 English**](README.en.md) · [**🇧🇷 Português**](README.pt.md)
+
 </div>
 
 ---
@@ -39,6 +41,30 @@ Puedes usar **StikSound directamente desde el navegador** sin instalar nada (fun
 | **Pegar enlaces directos de MyInstants** | ❌ *(descarga el MP3 primero)* | ✅ |
 | **WebM con transparencia** | ❌ *(solo MP4 en móvil/web)* | ✅ |
 
+<details>
+<summary><strong>🇺🇸 English — Overview, Web vs. Desktop & Quick Guide (Click to expand)</strong></summary>
+
+<br />
+
+- **Full English README:** [**README.en.md**](README.en.md)
+- **Web version ([silverfeit.github.io/StikSound](https://silverfeit.github.io/StikSound/)):** zero install (PC, Android & iPhone PWA). Runs **100% locally** using downloaded audio files (`MP3`, `WAV`, `M4A`, `OGG`, `AAC`) or short video clips (`MP4`, `MOV`, `WebM`).
+- **Direct MyInstants links:** blocked by browser CORS on static web pages. To paste MyInstants URLs directly (or export transparent WebM), install the [**Desktop app (Windows/macOS) or Chrome Extension**](https://github.com/SilverFeit/StikSound/releases/latest).
+- **In-app languages (9):** Español, English, Português, Français, Deutsch, Italiano, Русский, 中文, and العربية (selectable from `⋯`).
+
+</details>
+
+<details>
+<summary><strong>🇧🇷 Português — Visão Geral, Web vs. Desktop e Guia Rápido (Clique para expandir)</strong></summary>
+
+<br />
+
+- **README completo em Português:** [**README.pt.md**](README.pt.md)
+- **Versão Web ([silverfeit.github.io/StikSound](https://silverfeit.github.io/StikSound/)):** sem instalação (PC, Android e PWA no iPhone). Roda **100% localmente** com áudios já baixados (`MP3`, `WAV`, `M4A`, `OGG`, `AAC`) ou vídeos curtos (`MP4`, `MOV`, `WebM`).
+- **Links diretos do MyInstants:** bloqueados por CORS nos navegadores em páginas web estáticas. Para colar links do MyInstants diretamente (ou exportar WebM transparente), instale o [**App de Desktop (Windows/macOS) ou a Extensão do Chrome**](https://github.com/SilverFeit/StikSound/releases/latest).
+- **Idiomas no app (9):** Español, English, Português, Français, Deutsch, Italiano, Русский, 中文 e العربية (selecionável em `⋯`).
+
+</details>
+
 ---
 
 ## Qué hace StikSound
@@ -52,6 +78,7 @@ Concretamente permite:
 - Agregar audio desde un archivo local **MP3, WAV, OGG, M4A o AAC**.
 - Pegar un enlace de **MyInstants** y descargar ese sonido de forma validada.
 - Seleccionar un fragmento de audio de **0,1 a 5 o 10 segundos** usando el selector integrado `5s | 10s`.
+- Cambiar la interfaz entre **9 idiomas integrados** (`ES`, `EN`, `PT`, `FR`, `DE`, `IT`, `RU`, `ZH`, `AR`) desde el menú `⋯`.
 - Exportar un **MP4 compatible**, un **WebM con transparencia**, un **paquete ZIP** o un **WebP estático**.
 - Guardar y reabrir proyectos `.stiksound.zip` con la imagen, el audio y la configuración del recorte.
 
@@ -401,6 +428,8 @@ npx tauri build
 
 ## Documentación adicional
 
+- README en inglés: [README.en.md](README.en.md)
+- README en portugués: [README.pt.md](README.pt.md)
 - Índice técnico: [docs/README.md](docs/README.md)
 - Arquitectura: [docs/architecture/overview.md](docs/architecture/overview.md)
 - Requisitos funcionales: [docs/requirements/functional-requirements.md](docs/requirements/functional-requirements.md)

@@ -483,7 +483,8 @@ textarea {
 .stik-modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.65);
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.72);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -496,5 +497,112 @@ textarea {
   border-radius: 14px;
   padding: 16px;
   max-width: 340px;
+  width: 100%;
   font-size: 13px;
+}
+
+.stik-copyright-footer {
+  text-align: center;
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--muted);
+  opacity: 0.78;
+  padding-top: 2px;
+  flex-shrink: 0;
+}
+
+.stik-copyright-footer a,
+.stik-about-modal a {
+  color: #60a5fa;
+  text-decoration: underline;
+}
+
+.stik-about-modal {
+  max-width: 360px;
+  max-height: 90vh;
+  overflow-y: auto;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.stik-about-icon {
+  display: block;
+  border-radius: 14px;
+}
+
+.stik-about-title {
+  margin: 2px 0 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.stik-about-version {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.stik-about-subtitle {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.stik-about-rights {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.stik-about-meta {
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 4px 0 0;
+}
+
+.stik-about-meta p {
+  margin: 2px 0;
+}
+
+.stik-about-github {
+  margin-top: 6px !important;
+}
+
+.stik-about-licenses {
+  width: 100%;
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.stik-about-licenses summary {
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.stik-about-licenses p {
+  margin: 6px 0 2px;
+  line-height: 1.4;
+}
+
+.stik-about-footer {
+  margin: 4px 0 2px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.stik-about-close {
+  margin-top: 2px;
+  padding: 6px 16px;
 }

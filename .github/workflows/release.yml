@@ -127,7 +127,9 @@ jobs:
           name: StikSound ${{ startsWith(github.ref_name, 'v') && github.ref_name || github.event.inputs.tag }} — Windows, macOS & Chrome Extension
           generate_release_notes: true
           body: |
-            ## Descargas listas para usar (sin instalar FFmpeg ni dependencias extra)
+            ## 🌐 Versión Web (sin instalación) y Descargas (100% local, sin FFmpeg)
+
+            > **¿Prefieres no instalar nada?** Usa la versión web en **[silverfeit.github.io/StikSound](https://silverfeit.github.io/StikSound/)** (funciona en PC, Android y iPhone como PWA con audios descargados en tu dispositivo). Para pegar enlaces directos de **MyInstants** o exportar **WebM transparente**, descarga la app de escritorio o la extensión de Chrome abajo.
 
             | Plataforma | Archivo recomendado | Cómo usar |
             | --- | --- | --- |
@@ -136,9 +138,47 @@ jobs:
             | **Google Chrome / Edge / Brave** | `StikSound-*-chrome-extension.zip` | Descomprime el ZIP, abre `chrome://extensions/`, activa **Modo de desarrollador** y pulsa **Cargar descomprimida** seleccionando la carpeta descomprimida. |
 
             ### Qué incluye esta versión
-            - Soporte para stickers **PNG con transparencia**, **WebP**, **JPG** y **GIF animado** (en bucle durante el fragmento exportado, hasta 10 segundos).
+            - Soporte para stickers **PNG con transparencia**, **WebP**, **JPG** y **GIF animado** (en bucle con duración mínima de un ciclo y sincronizado con la vista previa).
             - Encuadre `1:1` automático desde el centro o moviendo el mouse encima **sin hacer clic**.
             - Selector directo de transparencia (**Transparente**, **Blanco**, **Negro** o **Color**).
-            - Recorte de audio local (MP3/WAV/OGG/M4A) o enlace de **MyInstants** en ventana de **10 segundos**.
-            - Flecha **`➔`** para previsualizar y copiar directo al portapapeles (`Ctrl+V` / `Cmd+V` en WhatsApp) y botón **`⬇`** para descargar eligiendo el formato (MP4, WebM transparente, ZIP o WebP).
+            - Recorte de audio local (`MP3`/`WAV`/`OGG`/`M4A`) o enlace de **MyInstants** con selector **`5s | 10s`**.
+            - Interfaz multilingüe en **9 idiomas** (`ES`, `EN`, `PT`, `FR`, `DE`, `IT`, `RU`, `ZH`, `AR`), diálogo *Acerca de y licencias* renovado y botón **`➔`** / **`⬇`** para previsualizar, copiar o descargar (`MP4`, `WebM`, `ZIP` o `WebP`).
+
+            ---
+
+            <details>
+            <summary><strong>🇺🇸 English — Release Guide & Downloads (Click to expand)</strong></summary>
+
+            > **Prefer zero installation?** Use the Web App at **[silverfeit.github.io/StikSound](https://silverfeit.github.io/StikSound/)** (works on PC, Android & iPhone PWA with downloaded audio files). To paste direct **MyInstants** links or export **transparent WebM**, download the Desktop app or Chrome extension below.
+
+            | Platform | Recommended file | How to use |
+            | --- | --- | --- |
+            | **Windows 10/11 (64-bit)** | `StikSound-*-windows-x64.exe` *(portable)* or `*-setup.exe` *(installer)* | Double-click to run or install immediately. |
+            | **macOS (Apple Silicon & Intel)** | `StikSound-*-macos-universal.dmg` or `.app.zip` | Drag `StikSound.app` to **Applications**. *(If Gatekeeper warns about an unverified developer: right-click → **Open**).* |
+            | **Google Chrome / Edge / Brave** | `StikSound-*-chrome-extension.zip` | Unzip the archive, open `chrome://extensions/`, enable **Developer mode**, and click **Load unpacked** on the extracted folder. |
+
+            #### Highlights
+            - Supports **PNG with alpha**, **WebP**, **JPG**, and **animated GIF** (looped, matching preview delays and per-frame keyframes).
+            - Zero-click `1:1` crop framing, direct matte/transparency selector, and `5s | 10s` audio duration toggle.
+            - **9 built-in UI languages** (`ES`, `EN`, `PT`, `FR`, `DE`, `IT`, `RU`, `ZH`, `AR`) and updated About & licenses dialog.
+
+            </details>
+
+            <details>
+            <summary><strong>🇧🇷 Português — Guia de Lançamento e Downloads (Clique para expandir)</strong></summary>
+
+            > **Prefere não instalar nada?** Use a versão web em **[silverfeit.github.io/StikSound](https://silverfeit.github.io/StikSound/)** (funciona no PC, Android e iPhone como PWA com áudios baixados). Para colar links diretos do **MyInstants** ou exportar **WebM transparente**, baixe o app de desktop ou a extensão do Chrome abaixo.
+
+            | Plataforma | Arquivo recomendado | Como usar |
+            | --- | --- | --- |
+            | **Windows 10/11 (64-bit)** | `StikSound-*-windows-x64.exe` *(portátil)* ou `*-setup.exe` *(instalador)* | Clique duas vezes para abrir ou instalar. |
+            | **macOS (Apple Silicon & Intel)** | `StikSound-*-macos-universal.dmg` ou `.app.zip` | Arraste `StikSound.app` para **Aplicativos**. *(Se aparecer aviso de desenvolvedor não verificado: clique com o botão direito → **Abrir**).* |
+            | **Google Chrome / Edge / Brave** | `StikSound-*-chrome-extension.zip` | Extraia o ZIP, abra `chrome://extensions/`, ative o **Modo do desenvolvedor** e clique em **Carregar sem compactação**. |
+
+            #### Novidades incluídas
+            - Suporte para **PNG com transparência**, **WebP**, **JPG** e **GIF animado** (em loop sincronizado com a prévia).
+            - Enquadramento `1:1` sem clique, seletor direto de fundo/transparência e botão de duração **`5s | 10s`**.
+            - **9 idiomas na interface** (`ES`, `EN`, `PT`, `FR`, `DE`, `IT`, `RU`, `ZH`, `AR`) e janela Sobre e licenças atualizada.
+
+            </details>
           files: artifacts/*

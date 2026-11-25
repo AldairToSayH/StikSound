@@ -292,4 +292,45 @@ describe("StikSoundMinimalApp UI", () => {
     fireEvent.click(screen.getByTestId("max-duration-5s"));
     await waitFor(() => expect(screen.getByTestId("duration-readout").textContent).toBe("5.0s / 5.0s"));
   });
+
+  it("renders subtle copyright footer, redesigned About modal, and switches across all 9 locales including RTL Arabic", () => {
+    render(
+      <StikSoundMinimalApp
+        engine={createTestEngine()}
+        providers={[]}
+        shell={{ saveArtifact: vi.fn() }}
+        initialLocale="es"
+        appVersion="1.1.2"
+      />
+    );
+
+    const footer = screen.getByTestId("copyright-footer");
+    expect(footer.textContent).toContain("Copyright © 2026");
+    const repoLink = footer.querySelector("a");
+    expect(repoLink?.getAttribute("href")).toBe("https://github.com/SilverFeit/StikSound");
+
+    // Open overflow menu and switch language to Chinese, then Arabic (RTL)
+    fireEvent.click(screen.getByTestId("overflow-menu-btn"));
+    const langSelect = screen.getByTestId("language-select") as HTMLSelectElement;
+    expect(langSelect.options).toHaveLength(9);
+
+    fireEvent.change(langSelect, { target: { value: "zh" } });
+    expect(screen.getByTestId("stiksound-minimal-app").getAttribute("dir")).toBe("ltr");
+    expect(screen.getByTestId("audio-pick-btn").textContent).toBe("音频");
+
+    fireEvent.change(langSelect, { target: { value: "ar" } });
+    expect(screen.getByTestId("stiksound-minimal-app").getAttribute("dir")).toBe("rtl");
+
+    fireEvent.change(langSelect, { target: { value: "pt" } });
+    expect(screen.getByTestId("audio-pick-btn").textContent).toBe("Áudio");
+
+    // Open About & licenses modal
+    fireEvent.click(screen.getByText("Sobre e licenças"));
+    const aboutModal = screen.getByTestId("about-modal");
+    expect(aboutModal.textContent).toContain("Version 1.1.2");
+    expect(aboutModal.textContent).toContain("MIT");
+    expect(aboutModal.textContent).toContain("Apache-2.0");
+    expect(aboutModal.textContent).toContain("Copyright © 2026 SilverFeit");
+    expect(aboutModal.textContent).toContain("symphonia");
+  });
 });

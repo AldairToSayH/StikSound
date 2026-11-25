@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  ERROR_CATALOG,
   ProjectController,
+  SUPPORTED_LOCALES,
   StikSoundError,
   computeSquareCrop,
   createProject,
   defaultTrimForDuration,
+  detectLocale,
   resetProject,
   sanitizeExportName,
   slideTrimWindow,
@@ -304,5 +307,28 @@ describe("packages/core domain and use cases", () => {
     proj = await ctrl.importAudioFile(proj, new Uint8Array([1, 2]), "800ms.mp3");
     const mp4MinGif = await ctrl.exportProject(proj, "video-mp4", 5_000);
     expect(mp4MinGif.durationMs).toBe(2_000);
+  });
+
+  it("detects all 9 supported locales and provides localized errors for each", () => {
+    expect(SUPPORTED_LOCALES).toEqual(["es", "en", "pt", "fr", "de", "it", "ru", "zh", "ar"]);
+    expect(detectLocale("es-CO")).toBe("es");
+    expect(detectLocale("pt-BR")).toBe("pt");
+    expect(detectLocale("zh-CN")).toBe("zh");
+    expect(detectLocale("ar-SA")).toBe("ar");
+    expect(detectLocale("fr-FR")).toBe("fr");
+    expect(detectLocale("de-DE")).toBe("de");
+    expect(detectLocale("it-IT")).toBe("it");
+    expect(detectLocale("ru-RU")).toBe("ru");
+    expect(detectLocale("ja-JP")).toBe("en");
+    expect(detectLocale(undefined)).toBe("en");
+
+    const err = new StikSoundError("unsupported-image");
+    for (const loc of SUPPORTED_LOCALES) {
+      for (const code of Object.keys(ERROR_CATALOG) as Array<keyof typeof ERROR_CATALOG>) {
+        expect(ERROR_CATALOG[code][loc].title.length).toBeGreaterThan(0);
+        expect(ERROR_CATALOG[code][loc].action.length).toBeGreaterThan(0);
+      }
+      expect(err.getLocalized(loc).title.length).toBeGreaterThan(0);
+    }
   });
 });

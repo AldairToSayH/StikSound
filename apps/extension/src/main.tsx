@@ -1,6 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import type { ExportArtifact } from "@stiksound/core";
+import { detectLocale, type ExportArtifact } from "@stiksound/core";
 import { WebMediaEngine } from "@stiksound/media-web";
 import { MyInstantsProvider } from "@stiksound/providers";
 import { StikSoundMinimalApp, type ShellBridge } from "@stiksound/ui";
@@ -48,7 +48,7 @@ const shell: ShellBridge = {
 
 const engine = new WebMediaEngine();
 const providers = [new MyInstantsProvider()];
-const locale = navigator.language.toLowerCase().startsWith("es") ? "es" : "en";
+const locale = detectLocale(navigator.language);
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

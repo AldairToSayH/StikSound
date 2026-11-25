@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   EXPORT_PROFILES,
   LIMITS,
+  LOCALE_NATIVE_NAMES,
   ProjectController,
+  SUPPORTED_LOCALES,
   computeSquareCrop,
   createProject,
   formatError,
@@ -16,8 +18,15 @@ import {
   type ProjectWorkspaceState,
   type SoundProvider
 } from "@stiksound/core";
+import arLocale from "../locales/ar.json";
+import deLocale from "../locales/de.json";
 import enLocale from "../locales/en.json";
 import esLocale from "../locales/es.json";
+import frLocale from "../locales/fr.json";
+import itLocale from "../locales/it.json";
+import ptLocale from "../locales/pt.json";
+import ruLocale from "../locales/ru.json";
+import zhLocale from "../locales/zh.json";
 import { TimelineTrimBar } from "./TimelineTrimBar";
 
 export type ShareOutcome = "shared" | "cancelled" | "needs-tap";
@@ -56,9 +65,22 @@ export interface StikSoundMinimalAppProps {
   initialState?: ProjectWorkspaceState;
   platform?: PlatformOptions;
   labelOverrides?: Partial<Record<LocaleCode, Partial<UiLabels>>>;
+  appVersion?: string;
 }
 
-const LOCALES: Record<LocaleCode, UiLabels> = { es: esLocale, en: enLocale };
+const REPO_URL = "https://github.com/SilverFeit/StikSound";
+
+const LOCALES: Record<LocaleCode, UiLabels> = {
+  es: esLocale,
+  en: enLocale,
+  pt: ptLocale,
+  fr: frLocale,
+  de: deLocale,
+  it: itLocale,
+  ru: ruLocale,
+  zh: zhLocale,
+  ar: arLocale
+};
 
 function audioMimeType(format: string): string {
   switch (format) {
@@ -84,7 +106,8 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
   initialLocale = "es",
   initialState,
   platform,
-  labelOverrides
+  labelOverrides,
+  appVersion = "1.1.2"
 }) => {
   const allowTransparent = platform?.transparentVideo !== false;
   const allowMyInstantsUrl = platform?.myInstantsUrl !== false;
@@ -544,7 +567,11 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
       : undefined;
 
   return (
-    <div className="stik-shell" data-testid="stiksound-minimal-app">
+    <div
+      className="stik-shell"
+      data-testid="stiksound-minimal-app"
+      dir={locale === "ar" ? "rtl" : "ltr"}
+    >
       <header className="stik-top-corners">
         <button
           type="button"
@@ -682,9 +709,21 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
             >
               {copy.menuSaveProject}
             </button>
-            <button type="button" onClick={() => setLocale((l) => (l === "es" ? "en" : "es"))}>
-              {copy.menuLanguage}: {locale.toUpperCase()}
-            </button>
+            <label className="stik-popover-row">
+              <span>{copy.menuLanguage}</span>
+              <select
+                data-testid="language-select"
+                aria-label={copy.menuLanguage}
+                value={locale}
+                onChange={(e) => setLocale(e.target.value as LocaleCode)}
+              >
+                {SUPPORTED_LOCALES.map((code) => (
+                  <option key={code} value={code}>
+                    {LOCALE_NATIVE_NAMES[code]}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button
               type="button"
               onClick={() => {
@@ -929,12 +968,88 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
         }}
       />
 
+      <footer className="stik-copyright-footer" data-testid="copyright-footer">
+        Copyright © 2026{" "}
+        <a href={REPO_URL} target="_blank" rel="noopener noreferrer">
+          SilverFeit
+        </a>
+        .
+      </footer>
+
       {aboutOpen && (
         <div className="stik-modal-backdrop" onClick={() => setAboutOpen(false)}>
-          <div className="stik-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>StikSound v1.0</h3>
-            <p>{copy.aboutRights}</p>
-            <button type="button" onClick={() => setAboutOpen(false)}>
+          <div
+            className="stik-modal stik-about-modal"
+            data-testid="about-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <svg
+              className="stik-about-icon"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 256 256"
+              width="64"
+              height="64"
+              aria-hidden="true"
+            >
+              <rect x="12" y="12" width="232" height="232" rx="54" fill="#141820" stroke="#25D366" strokeWidth="6" />
+              <rect x="50" y="54" width="128" height="128" rx="30" fill="#1F2633" stroke="#344054" strokeWidth="4" />
+              <path d="M178 148 L144 182 L144 148 Z" fill="#25D366" opacity="0.9" />
+              <circle cx="96" cy="108" r="10" fill="#F8FAFC" />
+              <circle cx="132" cy="108" r="10" fill="#F8FAFC" />
+              <path d="M92 136 Q114 156 136 136" fill="none" stroke="#F8FAFC" strokeWidth="8" strokeLinecap="round" />
+              <circle cx="184" cy="176" r="44" fill="#25D366" />
+              <path
+                d="M168 178 L168 156 L198 148 L198 172"
+                fill="none"
+                stroke="#08180E"
+                strokeWidth="7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <circle cx="163" cy="182" r="8" fill="#08180E" />
+              <circle cx="193" cy="174" r="8" fill="#08180E" />
+            </svg>
+
+            <h3 className="stik-about-title">StikSound</h3>
+            <p className="stik-about-version">Version {appVersion}</p>
+            <p className="stik-about-subtitle">{copy.aboutSubtitle}</p>
+            <p className="stik-about-rights">{copy.aboutRights}</p>
+
+            <div className="stik-about-meta">
+              <p>
+                {copy.aboutLicenseLine}{" "}
+                <a href={`${REPO_URL}/blob/main/LICENSE-MIT`} target="_blank" rel="noopener noreferrer">
+                  MIT
+                </a>
+                {" · "}
+                <a href={`${REPO_URL}/blob/main/LICENSE-APACHE`} target="_blank" rel="noopener noreferrer">
+                  Apache-2.0
+                </a>
+              </p>
+              <p>
+                Copyright © 2026{" "}
+                <a href={REPO_URL} target="_blank" rel="noopener noreferrer">
+                  SilverFeit
+                </a>
+                .
+              </p>
+              <p className="stik-about-github">
+                <a href={REPO_URL} target="_blank" rel="noopener noreferrer">
+                  GitHub ↗
+                </a>
+              </p>
+            </div>
+
+            <details className="stik-about-licenses">
+              <summary>{copy.aboutThirdPartyTitle}</summary>
+              <p>{copy.aboutThirdPartySummary}</p>
+            </details>
+
+            <p className="stik-about-footer">
+              {copy.aboutLicenseLine} Copyright © 2026 SilverFeit.
+            </p>
+
+            <button type="button" className="stik-pill-btn stik-about-close" onClick={() => setAboutOpen(false)}>
               {copy.close}
             </button>
           </div>

@@ -20,3 +20,6 @@ Thumbs.db
 *.log
 .env
 .env.*
+
+# Internal handoff docs
+docs/gemini-handoff/
