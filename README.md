@@ -6,14 +6,38 @@
 
 **Crea stickers con sonido de hasta 5 o 10 segundos (con switch en pantalla) a partir de un PNG, JPG, WebP o GIF animado: pega tu sticker, elige un audio local o un enlace de MyInstants, recorta el fragmento exacto y exporta todo localmente.**
 
-[![Release](https://img.shields.io/github/v/release/SilverFeit/StikSound?style=flat-square&label=Download&color=25D366)](https://github.com/SilverFeit/StikSound/releases/latest)
-[![Platforms](https://img.shields.io/badge/Platforms-Windows%20%7C%20macOS%20%7C%20Chrome-25D366?style=flat-square)](#instalación)
+[![Usar en la Web](https://img.shields.io/badge/Usar%20en%20la%20Web-GitHub%20Pages-0ea5e9?style=for-the-badge&logo=githubpages&logoColor=white)](https://silverfeit.github.io/StikSound/)
+[![Descargar](https://img.shields.io/github/v/release/SilverFeit/StikSound?style=for-the-badge&label=Descargar&color=25D366)](https://github.com/SilverFeit/StikSound/releases/latest)
+
+[![Platforms](https://img.shields.io/badge/Platforms-Web%20%7C%20Windows%20%7C%20macOS%20%7C%20Chrome-25D366?style=flat-square)](#usar-en-la-web-vs-instalar)
 [![Local Processing](https://img.shields.io/badge/Procesamiento-100%25%20local-10b981?style=flat-square)](#privacidad-y-seguridad)
 [![License](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-6366f1?style=flat-square)](LICENSE-MIT)
 
-[**Descargar**](https://github.com/SilverFeit/StikSound/releases/latest) · [**Guía de uso**](#guía-de-uso-paso-a-paso) · [**Cómo funciona internamente**](#cómo-funciona-internamente) · [**Desarrollo**](#desarrollo)
+[**Usar en la Web**](https://silverfeit.github.io/StikSound/) · [**Descargar**](https://github.com/SilverFeit/StikSound/releases/latest) · [**Guía de uso**](#guía-de-uso-paso-a-paso) · [**Cómo funciona internamente**](#cómo-funciona-internamente) · [**Desarrollo**](#desarrollo)
 
 </div>
+
+---
+
+## 🌐 Usar en la Web vs. Instalar
+
+Puedes usar **StikSound directamente desde el navegador** sin instalar nada (funciona en PC, Android y iPhone como PWA), pero ten en cuenta la diferencia con **MyInstants**:
+
+> [!IMPORTANT]
+> **Versión Web ([silverfeit.github.io/StikSound](https://silverfeit.github.io/StikSound/)):** funciona **solo con audios ya descargados** en tu dispositivo (`MP3`, `WAV`, `M4A`, `OGG`, `AAC`) o el sonido de un video corto.
+>
+> **¿Quieres pegar enlaces directos de MyInstants?** Por seguridad de los navegadores (CORS), MyInstants bloquea la descarga directa desde páginas web. Para usar enlaces de MyInstants **toca instalar** la [app de escritorio (Windows/macOS) o la extensión de Chrome](https://github.com/SilverFeit/StikSound/releases/latest) — o bien descargar primero el MP3 desde MyInstants y elegirlo manualmente en la web.
+
+| Característica | 🌐 Versión Web (GitHub Pages) | 💻 App Escritorio / 🧩 Extensión Chrome |
+| --- | :---: | :---: |
+| **Instalación requerida** | ❌ Ninguna ([abrir ahora](https://silverfeit.github.io/StikSound/)) | ✅ [Descargar release](https://github.com/SilverFeit/StikSound/releases/latest) |
+| **Procesamiento 100% local** | ✅ | ✅ |
+| **Stickers PNG / JPG / WebP / GIF** | ✅ | ✅ |
+| **Videos cortos (`MP4`, `MOV`, `WebM`) como sticker** | ✅ | — |
+| **Switch de duración `5s \| 10s`** | ✅ | ✅ |
+| **Audios locales descargados** | ✅ | ✅ |
+| **Pegar enlaces directos de MyInstants** | ❌ *(descarga el MP3 primero)* | ✅ |
+| **WebM con transparencia** | ❌ *(solo MP4 en móvil/web)* | ✅ |
 
 ---
 
@@ -239,6 +263,7 @@ Al abrirlo se validan las rutas internas para impedir entradas maliciosas como `
 apps/
   desktop/       App Tauri para Windows/macOS
   extension/     Extensión Chrome Manifest V3
+  web/           App Web / PWA desplegada en GitHub Pages
 packages/
   core/          Modelo de proyecto, invariantes, validación y casos de uso
   ui/            Editor React, barra de recorte y textos i18n
