@@ -23,7 +23,9 @@ Invariants:
 Default selection after import:
 
 - start at 0
-- end at `min(duration_ms, profile.max_audio_ms)`
+- end at `min(duration_ms, active preset)`
+
+The editor exposes two duration presets, 5000 ms and 10000 ms. The default preset is 10000 ms. The active preset is the export cap for that session and cannot exceed the profile `max_audio_ms`.
 
 Reset restores that default and sets volume to 1 and fades to 0.
 
@@ -33,7 +35,7 @@ The waveform is a derived cache of peaks, not project data.
 
 - Compute min and max peaks for a fixed bucket count (1024 buckets across the full clip).
 - Render the selected range with a distinct color.
-- Dragging a handle updates `start_ms` or `end_ms` while clamped to the invariants, except the profile max, which is a warning state rather than a drag clamp. The user can select 12 seconds and see why export is disabled.
+- Clicking the waveform or moving the slider repositions a window clamped to the active preset (5 or 10 seconds). The selection cannot exceed that preset.
 - Play selection starts at `start_ms` and stops at `end_ms`.
 - Play does not change the selection.
 

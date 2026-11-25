@@ -185,9 +185,14 @@ describe("packages/core domain and use cases", () => {
     expect(bundleManifest.bundle.whatsapp_native).toBe(false);
     expect(() => validateProjectManifest(bundleManifest)).not.toThrow();
 
-    await expect(ctrl.exportProject(project, "native-sound-sticker")).rejects.toMatchObject({
-      code: "export-unsupported"
-    });
+    const nativeError = await ctrl.exportProject(project, "native-sound-sticker").catch((err: unknown) => err);
+    expect(nativeError).toBeInstanceOf(StikSoundError);
+    if (!(nativeError instanceof StikSoundError)) return;
+    expect(nativeError.code).toBe("export-unsupported");
+    expect(nativeError.getLocalized("es").action).not.toMatch(/sticker con audio/i);
+    expect(nativeError.getLocalized("en").action).not.toMatch(/sound sticker/i);
+    expect(nativeError.getLocalized("es").action.toLowerCase()).toContain("video");
+    expect(nativeError.getLocalized("en").action.toLowerCase()).toContain("video");
   });
 
   it("TC-009, SEC-008 & SEC-010: saves/reopens project and blocks path traversal", async () => {

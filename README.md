@@ -43,7 +43,7 @@ Puedes usar **StikSound directamente desde el navegador** sin instalar nada (fun
 
 ## Qué hace StikSound
 
-StikSound combina **una imagen cuadrada** y **un fragmento de audio de hasta 10 segundos** en un archivo descargable o copiable. Está pensado para preparar stickers con sonido para WhatsApp sin usar editores de video complejos y sin subir tus archivos a un servicio externo.
+StikSound combina **una imagen cuadrada** y **un fragmento de audio** en un archivo descargable o copiable. El máximo de ese fragmento se elige con el botón `5s | 10s` (por defecto, 10 segundos). Está pensado para preparar stickers con sonido para WhatsApp sin usar editores de video complejos y sin subir tus archivos a un servicio externo.
 
 Concretamente permite:
 
@@ -55,7 +55,7 @@ Concretamente permite:
 - Exportar un **MP4 compatible**, un **WebM con transparencia**, un **paquete ZIP** o un **WebP estático**.
 - Guardar y reabrir proyectos `.stiksound.zip` con la imagen, el audio y la configuración del recorte.
 
-> **Nota importante sobre WhatsApp:** WhatsApp no publica una API oficial de escritorio para crear stickers con sonido. StikSound prepara y copia/descarga el archivo localmente; la forma exacta de importarlo y la compatibilidad final pueden depender de la versión de WhatsApp que estés usando. El perfil experimental `native-sound-sticker` existe en el código, pero está deshabilitado hasta que exista una verificación compatible.
+> **Nota importante sobre WhatsApp:** El MP4 exportado es un video, no un sticker. Pegarlo en el chat lo envía como video y no lo agrega a los stickers. En algunas cuentas de la beta de Android se puede probar Crear sticker eligiendo ese video en la galería; la duración y el audio los decide WhatsApp, y esa beta no está documentada de forma oficial. El perfil `native-sound-sticker` sigue deshabilitado.
 
 ---
 
@@ -95,9 +95,9 @@ Límites del archivo de origen:
 | Tamaño máximo del audio | 25 MB |
 | Duración máxima del audio importado | 3 minutos |
 | Duración mínima del fragmento seleccionado | 0,1 segundos |
-| Duración máxima del fragmento exportado | 10 segundos |
+| Duración máxima del fragmento exportado | 5 o 10 segundos (botón; por defecto 10) |
 
-Si el audio dura 10 segundos o menos, StikSound selecciona el audio completo automáticamente. Si dura más, selecciona los primeros 10 segundos y te permite mover esa ventana.
+Si el audio dura lo mismo o menos que el máximo elegido, StikSound selecciona el audio completo automáticamente. Si dura más, selecciona los primeros 5 o 10 segundos (según el botón; 10 por defecto) y te permite mover esa ventana.
 
 ### 4. Ajusta el fragmento de sonido
 
@@ -105,7 +105,7 @@ La barra inferior muestra una forma de onda calculada a partir del audio real:
 
 - Las barras representan picos mínimos y máximos en 1024 divisiones del audio.
 - Al hacer clic sobre la onda, la ventana de recorte se centra cerca de ese punto.
-- Si el audio supera los 10 segundos, aparece un deslizador para mover la ventana a lo largo del archivo.
+- Si el audio supera el máximo elegido (`5s` o `10s`), aparece un deslizador para mover la ventana a lo largo del archivo.
 - El indicador de la derecha muestra `seleccionado / máximo`, por ejemplo `10.0s / 10.0s`.
 - El botón de reproducción escucha exactamente el tramo seleccionado.
 
@@ -143,6 +143,7 @@ Si el sistema operativo o el navegador no permite copiar videos al portapapeles,
 | JPG/JPEG | Compatible, sin transparencia. |
 | WebP | Compatible como imagen de entrada; la animación WebP no es el flujo principal de v1. |
 | GIF | Compatible; los GIF animados se decodifican por cuadros y se repiten en bucle. |
+| MP4, MOV, WebM | Solo en la versión web, como clip de entrada de hasta 60 segundos. La exportación sigue el máximo de 5 o 10 segundos. |
 
 Límites de seguridad para imágenes:
 
@@ -224,7 +225,7 @@ Vista previa, copia o descarga
 3. Se calculan 1024 picos para dibujar la forma de onda.
 4. El fragmento se recorta con `start_ms` y `end_ms` enteros en milisegundos.
 5. El fragmento se remuestrea a **48 kHz mono**, que es la base usada por la exportación.
-6. La validación exige una selección entre **100 ms y 10.000 ms**.
+6. La validación exige una selección entre **100 ms y el máximo elegido (5.000 o 10.000 ms; por defecto 10.000)**.
 
 ### Codificación de video
 
@@ -393,7 +394,7 @@ npx tauri build
 | “No se pudo leer este audio” | El archivo está corrupto o el códec no existe en esa plataforma | Prueba con MP3 o WAV, o exporta nuevamente el audio desde otra app. |
 | El video transparente sale con fondo | Elegiste MP4 o la plataforma no soporta alfa VP9 | Usa la salida WebM transparente. |
 | El botón copiar no pega en WhatsApp | El navegador/sistema bloquea videos en el portapapeles | Descarga el archivo con `⬇` y compártelo manualmente. |
-| El audio suena recortado | El fragmento seleccionado está limitado a 10 segundos | Mueve la ventana de recorte o usa un audio más corto. |
+| El audio suena recortado | El fragmento seleccionado está limitado al máximo elegido (5 o 10 segundos) | Cambia el botón `5s \| 10s`, mueve la ventana de recorte o usa un audio más corto. |
 | El WebP falla por tamaño | WhatsApp exige stickers estáticos pequeños | Usa una imagen más simple o exporta como video. |
 
 ---

@@ -267,8 +267,15 @@ describe("StikSoundMinimalApp UI", () => {
 
     // Download MP4 at 5s cap
     fireEvent.click(screen.getByTestId("download-btn"));
-    fireEvent.click(screen.getByTestId("download-fmt-video-mp4"));
-    await waitFor(() => expect(saved).toHaveLength(1));
+    const mp4Choice = screen.getByTestId("download-fmt-video-mp4");
+    expect(mp4Choice.textContent ?? "").toMatch(/video mp4/i);
+    expect(mp4Choice.textContent ?? "").not.toMatch(/whatsapp/i);
+    fireEvent.click(mp4Choice);
+    await waitFor(() => {
+      expect(saved).toHaveLength(1);
+      expect(screen.getByTestId("status-banner").textContent ?? "").toMatch(/no lo importa como sticker/i);
+    });
+    expect(screen.getByTestId("status-banner").textContent ?? "").not.toMatch(/sticker con audio/i);
     expect(saved[0]!.fileName).toMatch(/-5s\.mp4$/);
 
     // Switch to 10s -> selection expands automatically to 10.0s

@@ -6,11 +6,13 @@ Export reads a project and writes a new artifact. It does not modify project ass
 
 | Profile id | v1 status | Output |
 | --- | --- | --- |
+| `video-mp4` | Enabled, default | Square MP4 (H.264 + AAC), solid background, at most the selected preset (5 or 10 seconds; default 10). A video file, not a WhatsApp sticker. |
+| `video-webm-alpha` | Enabled | WebM with alpha, at most the selected preset (5 or 10 seconds; default 10). A video file, not a WhatsApp sticker. |
 | `standard-webp` | Enabled | One 512 x 512 static WebP |
-| `sound-bundle` | Enabled, default | A ZIP with the WebP, the Opus clip, and a manifest |
+| `sound-bundle` | Enabled | A ZIP with the WebP, the Opus clip, and a manifest |
 | `native-sound-sticker` | Registered, disabled | No file. Returns `export-unsupported` |
 
-The UI lists the two enabled profiles. It does not show the disabled one as a choice. The adapter module still exists so a later build can enable it behind the verification checklist.
+The UI lists the enabled profiles and hides `native-sound-sticker`. The adapter module still exists so a later build can enable it behind the verification checklist. Sharing or pasting the MP4 in a chat sends a video. WhatsApp does not add that file to the sticker tray. The published sticker file remains the static WebP without audio.
 
 ## Validation before write
 
@@ -69,6 +71,8 @@ sound.ogg
   }
 }
 ```
+
+`max_audio_ms` is the active duration preset: 10000 in the example (the default) or 5000 when the user selects 5 seconds.
 
 `whatsapp_native: false` is required so a later tool does not mistake the bundle for a WhatsApp sound sticker.
 

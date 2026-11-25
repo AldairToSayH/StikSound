@@ -66,9 +66,9 @@ MyInstants is an import provider, not a hardcoded parser scattered through the U
 | FR-004.7 | Normalize peak loudness of the selected range. | P2 |
 | FR-004.8 | Reset trim, volume, and fades to the imported audio. | P0 |
 | FR-004.9 | Show the selected duration and the limit of the active export profile. | P0 |
-| FR-004.10 | Refuse to export a selection longer than the profile limit. The default draft limit is 10000 ms. | P0 |
+| FR-004.10 | Refuse to export a selection longer than the active duration preset. Presets are 5000 ms and 10000 ms. The default preset is 10000 ms, which matches the profile ceiling. | P0 |
 
-The 10 second cap is a product rule copied from public reports of WhatsApp's own authoring UI. It is not a published third-party specification. The cap lives in the export profile so it can change without a domain rewrite.
+The upper cap of 10 seconds is a product rule copied from public reports of WhatsApp's own authoring UI. It is not a published third-party specification. The editor also offers a 5 second preset. The profile still stores 10000 ms as the ceiling so the preset can change without a domain rewrite.
 
 ## FR-005 Sticker editor
 

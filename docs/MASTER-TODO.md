@@ -5,7 +5,7 @@ Updated: 2026-11-24
 
 How to use this list: implement phases in order. A phase is done when its exit check passes. Do not enable `native-sound-sticker` from this list. That work is the spike in Phase 9 and stays disabled unless the WhatsApp verification record exists.
 
-Note (2026-11-24 product alignment): Primary export profile is `video-mp4` (H.264 + AAC clip with audio selections up to 10 seconds, plus `video-webm-alpha` for real alpha), GIF animated stickers are supported alongside PNG/WebP/JPG, and the UI uses the 4-control minimalist canvas (`✕`, `✓`, center sticker, trim timeline bar).
+Note (2026-11-24 product alignment): Primary export profile is `video-mp4` (H.264 + AAC clip with audio selections of 5 or 10 seconds, on-screen switch, default 10, plus `video-webm-alpha` for real alpha), GIF animated stickers are supported alongside PNG/WebP/JPG, and the UI uses the 4-control minimalist canvas (`✕`, `✓`, center sticker, trim timeline bar).
 
 Requirements live in `docs/requirements`. Behavior lives in `docs/specifications`. This file is only the work order.
 

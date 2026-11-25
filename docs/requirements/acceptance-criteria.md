@@ -10,7 +10,7 @@ Native WhatsApp playback is not an MVP criterion. AC-015 records that exclusion 
 | --- | --- | --- | --- |
 | AC-001 | The editor is open and the clipboard holds a transparent PNG | The user pastes | A preview appears, alpha is preserved, and the source file on disk is unchanged |
 | AC-002 | The user has a static WebP sticker | They import it | The preview matches the source and the later export remains WebP at 512 x 512 |
-| AC-003 | The user has an MP3 longer than 10 seconds | They import it and drag a range of 10 seconds or less | Preview plays that range, and the exported audio duration matches the range within 50 ms |
+| AC-003 | The user has an MP3 longer than 10 seconds and the duration preset is 10 seconds (the default) | They import it and keep a range of 10 seconds or less | Preview plays that range, and the exported audio duration matches the range within 50 ms |
 | AC-004 | The clipboard holds a working MyInstants instant URL | The user pastes it | The app stores a local audio file, shows a title or the URL, and can play it with the network disconnected afterwards |
 | AC-005 | The clipboard holds a URL outside the allowlist, or a MyInstants URL that 404s | The user pastes it | A recoverable error is shown and no partial asset is attached |
 | AC-006 | The user picks a truncated or non-media file | Import runs | The file is rejected. Existing project assets stay as they were |

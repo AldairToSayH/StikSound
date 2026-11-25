@@ -39,7 +39,7 @@ The first release delivers 1 and 2. It reserves the interface for 3 and does not
 - Paste, drop, or open one sticker image.
 - Open one local audio file, or paste one MyInstants URL.
 - Preview the sticker and the sound together.
-- Trim the sound to the active export profile limit (10 seconds in the draft WhatsApp profile).
+- Trim the sound to the selected duration preset (5 or 10 seconds; 10 seconds by default).
 - Save a project and reopen it.
 - Export WebP, processed audio, a JSON manifest, and a ZIP bundle.
 - Run the same project format on Windows, macOS, and Chrome.

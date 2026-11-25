@@ -102,22 +102,22 @@ export const ERROR_CATALOG: Record<StikSoundErrorCode, Record<LocaleCode, Locali
   },
   "trim-out-of-range": {
     es: {
-      title: "El fragmento seleccionado debe durar entre 0.1 s y 10.0 s.",
-      action: "Ajusta la barra de tiempo para encuadrar el audio dentro de 10 segundos."
+      title: "El fragmento seleccionado debe durar entre 0.1 s y el máximo elegido (5 s o 10 s).",
+      action: "Ajusta la barra de tiempo para que la selección quepa en 5 o 10 segundos."
     },
     en: {
-      title: "The selected audio range must be between 0.1 s and 10.0 s.",
-      action: "Adjust the timeline handles so the selection fits within 10 seconds."
+      title: "The selected audio range must be between 0.1 s and the selected maximum (5 s or 10 s).",
+      action: "Adjust the timeline so the selection fits within 5 or 10 seconds."
     }
   },
   "sticker-too-large": {
     es: {
       title: "El sticker WebP supera el límite de 100 KB requerido por WhatsApp.",
-      action: "Exporta como Video 10 s o usa una imagen más simple."
+      action: "Exporta como video (5 s o 10 s) o usa una imagen más simple."
     },
     en: {
       title: "The WebP sticker could not fit under WhatsApp's 100 KB limit.",
-      action: "Export as a 10s Video or try a simpler image."
+      action: "Export as a 5s or 10s video or try a simpler image."
     }
   },
   "package-invalid": {
@@ -133,11 +133,11 @@ export const ERROR_CATALOG: Record<StikSoundErrorCode, Record<LocaleCode, Locali
   "export-unsupported": {
     es: {
       title: "La exportación nativa directa a WhatsApp aún no está disponible.",
-      action: "Exporta el Video de 10 s y súbelo manualmente como sticker con audio en WhatsApp."
+      action: "El MP4 es un video, no un sticker: pegarlo o compartirlo en el chat lo envía como video. Solo en algunas cuentas de la beta de Android, no documentada de forma oficial, se puede probar Crear sticker eligiendo el video en la galería; la duración y el audio los decide WhatsApp."
     },
     en: {
       title: "Direct native WhatsApp sticker export is not supported yet.",
-      action: "Export the 10s Video and upload it in WhatsApp as a sound sticker."
+      action: "The MP4 is a video, not a sticker: pasting or sharing it in the chat sends it as a video. Only on some Android beta accounts, which are not officially documented, can you try Create sticker and pick the video from the gallery; WhatsApp decides the duration and audio."
     }
   }
 };

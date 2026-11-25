@@ -101,7 +101,7 @@ const webLabels: Record<LocaleCode, Partial<UiLabels>> = {
     downloadFmtMp4: "Video MP4 (5s / 10s)",
     exportSuccessVideo: "Listo. Si no elegiste dónde guardarlo, búscalo en Archivos → Descargas.",
     aboutRights:
-      "Versión web. Todo se procesa en tu teléfono; nada se sube a internet. Para usar un sonido de MyInstants, descárgalo primero desde Safari y luego elígelo con el botón de audio.",
+      "Versión web. Todo se procesa en tu teléfono; nada se sube a internet. Para usar un sonido de MyInstants, descárgalo primero desde Safari y luego elígelo con el botón de audio. El video dura como máximo 5 o 10 segundos, según el botón de la barra (por defecto, 10).",
     ...(isTouch
       ? {
           stickerDropTitle: "Toca para elegir tu sticker",
@@ -121,7 +121,7 @@ const webLabels: Record<LocaleCode, Partial<UiLabels>> = {
     downloadFmtMp4: "MP4 video (5s / 10s)",
     exportSuccessVideo: "Done. If you didn't pick a place, look in Files → Downloads.",
     aboutRights:
-      "Web version. Everything runs on your phone; nothing is uploaded. To use a MyInstants sound, download it in Safari first, then pick it with the sound button.",
+      "Web version. Everything runs on your phone; nothing is uploaded. To use a MyInstants sound, download it in Safari first, then pick it with the sound button. The video is at most 5 or 10 seconds, chosen with the bar button (10 by default).",
     ...(isTouch
       ? {
           stickerDropTitle: "Tap to choose your sticker",

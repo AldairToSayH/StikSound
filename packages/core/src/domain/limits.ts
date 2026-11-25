@@ -1,7 +1,7 @@
 export const LIMITS = {
   MAX_IMAGE_BYTES: 20 * 1024 * 1024, // 20 MB (NFR-014)
   MAX_VIDEO_BYTES: 100 * 1024 * 1024, // 100 MB short clip used as a sticker
-  MAX_VIDEO_DURATION_MS: 60_000, // 60 s clip; the exported window stays 5 s
+  MAX_VIDEO_DURATION_MS: 60_000, // 60 s input clip; export uses the 5 s or 10 s preset
   MAX_AUDIO_BYTES: 25 * 1024 * 1024, // 25 MB (NFR-014)
   MAX_AUDIO_DURATION_MS: 180_000, // 3 minutes (NFR-014)
   MIN_AUDIO_DURATION_MS: 100,

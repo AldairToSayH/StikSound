@@ -31,9 +31,13 @@ The third-party pack contract is an Android content provider plus an iOS pastebo
 As of 2026-11-24:
 
 - WABetaInfo and Android Authority reported a sound-sticker feature in Android development builds around October 2026 (beta series 2.26.41). Reported authoring behavior: attach a recording or a file to a still sticker, trim to about 10 seconds, and show a volume icon. Video-based stickers were reported to keep about 5 seconds of audio.
-- On 2026-11-24, users in some regions reported receiving stickers that play audio from a speaker icon. Meta had not published a schedule or a third-party specification. Press reports the same day said custom creation by end users was still not confirmed.
+- On 2026-11-24, users in some regions reported receiving stickers that play audio from a speaker icon. Meta had not published a schedule or a third-party specification. Press reports that day still had not confirmed custom creation by end users.
 
-StikSound treats those reports as product context for the 10 second default limit. They are not an API.
+Update, 2026-11-25: WABetaInfo reported that creating a sound sticker from a gallery video is a gradual Android beta. It is associated with some accounts on Android beta 2.26.47.1, not with every Android version. Meta has not published a format, codec, duration limit, audio rule, or version matrix. There is no API contract. WhatsApp reconverts the chosen video and decides the duration and the audio. StikSound cannot guarantee that path.
+
+The published sticker contract remains WebP at 512×512 without audio. The `native-sound-sticker` profile stays disabled. An exported MP4 is a video (H.264 + AAC, square, at most the selected preset of 5 or 10 seconds, default 10, solid background), not a sticker. Pasting or sharing that file in a chat sends a video. WhatsApp does not add it to the sticker tray.
+
+StikSound treats the press reports as product context for the 10 second default limit. The editor can switch that limit to 5 seconds. They are not an API.
 
 ## Unofficial client observations
 
@@ -48,9 +52,11 @@ Consequences for StikSound:
 
 ## What v1 tells the user
 
+After a video export, the success text says the file downloaded, that WhatsApp does not import it as a sticker, and that only some Android beta accounts can try Create sticker by picking the video from the gallery. It also says WhatsApp decides the duration and the audio, and that the beta is not officially documented. The copy toast says that pasting the file in the chat sends a video and does not add it to stickers.
+
 After a sound-bundle export, the success text says the ZIP contains the sticker and the sound as two files, and that WhatsApp may still treat the image as a normal sticker.
 
-The success text does not say "ready for WhatsApp sound stickers".
+The success text does not call the MP4 a WhatsApp sound sticker.
 
 ## Future verification record
 
