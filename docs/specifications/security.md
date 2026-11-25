@@ -23,6 +23,8 @@ Chrome's host permission must match the same hosts. The extension must not call 
 - Decode in the engine process, off the UI thread. A decode error becomes `unsupported-image` or `unsupported-audio`.
 - Do not execute downloaded bytes. Do not honor archive extra fields as paths.
 - Image decoders must be configured to reject decompression bombs: cap decoded pixels at 40 megapixels and cap a single dimension at 8000 px before the fit step. Inputs inside the byte limit can still expand.
+- Animated GIFs are further capped by GIF-specific limits: at most 300 frames, at most 64 MiB (16,777,216 pixels) for the logical canvas and any individual frame descriptor, and at most 256 MiB of retained decoded RGBA frame memory including the working canvas and disposal-method buffers. Frame descriptors are validated before any LZW output allocation. Exceeding these limits is rejected with a typed error instead of being truncated.
+- Both the browser (`packages/media-web`) and native (`crates/image-engine`) GIF decode paths enforce the same limits before allocation, before retaining each frame, and before reporting a successful image probe.
 
 ## Package import
 

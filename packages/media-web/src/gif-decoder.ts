@@ -1,4 +1,10 @@
 import { LIMITS, StikSoundError } from "@stiksound/core";
+import {
+  allocateGifBuffer,
+  assertGifCanvas,
+  assertGifDecodedMemory,
+  assertGifFrameDescriptor
+} from "./gif-limits";
 
 export interface DecodedGifFrame {
   width: number;
@@ -26,7 +32,7 @@ function lzwDecode(minCodeSize: number, data: Uint8Array, pixelCount: number): U
 
   const clearCode = 1 << minCodeSize;
   const eoiCode = clearCode + 1;
-  const out = new Uint8Array(pixelCount);
+  const out = allocateGifBuffer(pixelCount, "LZW output");
 
   const prefix = new Int32Array(4096);
   const suffix = new Uint8Array(4096);
@@ -165,15 +171,7 @@ export function decodeGifFramesRgba(bytes: Uint8Array): DecodedGifFrame[] {
 
   const width = readU16LE(bytes, 6);
   const height = readU16LE(bytes, 8);
-  if (width <= 0 || height <= 0) {
-    throw new StikSoundError("unsupported-image", "GIF has zero dimensions.");
-  }
-  if (width > LIMITS.MAX_IMAGE_DIMENSION || height > LIMITS.MAX_IMAGE_DIMENSION) {
-    throw new StikSoundError("file-too-large", `GIF dimension ${width}x${height} exceeds 8000 px.`);
-  }
-  if (width * height > LIMITS.MAX_IMAGE_PIXELS) {
-    throw new StikSoundError("file-too-large", `GIF exceeds 40 megapixels (${width}x${height}).`);
-  }
+  const canvasSize = assertGifCanvas(width, height);
 
   const packed = bytes[10] ?? 0;
   let pos = 13;
@@ -187,8 +185,10 @@ export function decodeGifFramesRgba(bytes: Uint8Array): DecodedGifFrame[] {
     pos += gctSize;
   }
 
-  const currentCanvas = new Uint8Array(width * height * 4);
+  const currentCanvas = allocateGifBuffer(canvasSize.byteLength, "canvas");
   const frames: DecodedGifFrame[] = [];
+  let retainedBytes = 0;
+  let descriptorCount = 0;
 
   let disposalMethod = 0;
   let transparentFlag = false;
@@ -204,8 +204,9 @@ export function decodeGifFramesRgba(bytes: Uint8Array): DecodedGifFrame[] {
     if (block === 0x21) {
       if (pos >= bytes.byteLength) break;
       const label = bytes[pos++];
-      if (label === 0xf9 && pos + 5 <= bytes.byteLength) {
+      if (label === 0xf9 && pos < bytes.byteLength) {
         const blockSize = bytes[pos]!;
+        if (blockSize < 4 || pos + 1 + blockSize > bytes.byteLength) break;
         const gcePacked = bytes[pos + 1]!;
         disposalMethod = (gcePacked >> 2) & 0x07;
         transparentFlag = (gcePacked & 0x01) !== 0;
@@ -213,14 +214,23 @@ export function decodeGifFramesRgba(bytes: Uint8Array): DecodedGifFrame[] {
         delayMs = Math.max(20, (delayCs === 0 ? 10 : delayCs) * 10);
         transparentIndex = bytes[pos + 4] ?? 0;
         pos += 1 + blockSize;
-        while (pos < bytes.byteLength && bytes[pos]! > 0) {
-          pos += 1 + bytes[pos]!;
+        while (pos < bytes.byteLength) {
+          const subLen = bytes[pos++]!;
+          if (subLen === 0) break;
+          if (subLen > bytes.byteLength - pos) {
+            pos = bytes.byteLength;
+            break;
+          }
+          pos += subLen;
         }
-        pos++;
       } else {
         while (pos < bytes.byteLength) {
           const subLen = bytes[pos++] ?? 0;
           if (subLen === 0) break;
+          if (subLen > bytes.byteLength - pos) {
+            pos = bytes.byteLength;
+            break;
+          }
           pos += subLen;
         }
       }
@@ -228,6 +238,13 @@ export function decodeGifFramesRgba(bytes: Uint8Array): DecodedGifFrame[] {
     }
 
     if (block === 0x2c) {
+      if (descriptorCount >= LIMITS.MAX_GIF_FRAMES) {
+        throw new StikSoundError(
+          "file-too-large",
+          `GIF exceeds the ${LIMITS.MAX_GIF_FRAMES} frame limit.`
+        );
+      }
+      descriptorCount++;
       if (pos + 9 > bytes.byteLength) break;
       const left = readU16LE(bytes, pos);
       const top = readU16LE(bytes, pos + 2);
@@ -235,6 +252,9 @@ export function decodeGifFramesRgba(bytes: Uint8Array): DecodedGifFrame[] {
       const frameHeight = readU16LE(bytes, pos + 6);
       const imgPacked = bytes[pos + 8] ?? 0;
       pos += 9;
+
+      const framePixels = assertGifFrameDescriptor(width, height, left, top, frameWidth, frameHeight);
+      const frameBytes = framePixels * 4;
 
       const hasLct = (imgPacked & 0x80) !== 0;
       const interlaced = (imgPacked & 0x40) !== 0;
@@ -261,7 +281,7 @@ export function decodeGifFramesRgba(bytes: Uint8Array): DecodedGifFrame[] {
         pos = end;
       }
 
-      if (!palette || frameWidth === 0 || frameHeight === 0) {
+      if (!palette) {
         disposalMethod = 0;
         transparentFlag = false;
         transparentIndex = 0;
@@ -269,25 +289,37 @@ export function decodeGifFramesRgba(bytes: Uint8Array): DecodedGifFrame[] {
         continue;
       }
 
-      const lzwData = new Uint8Array(totalDataLen);
+      const needsPrevious = disposalMethod === 3;
+      const indexBytes = framePixels * (interlaced ? 2 : 1);
+      const workingBytes =
+        canvasSize.byteLength + totalDataLen + indexBytes + (needsPrevious ? frameBytes : 0);
+      assertGifDecodedMemory(retainedBytes, canvasSize.byteLength, workingBytes);
+
+      const lzwData = allocateGifBuffer(totalDataLen, "LZW data");
       let chunkOff = 0;
       for (const c of chunks) {
         lzwData.set(c, chunkOff);
         chunkOff += c.length;
       }
 
-      const prevCanvas = disposalMethod === 3 ? currentCanvas.slice() : null;
-      let indices = lzwDecode(minCodeSize, lzwData, frameWidth * frameHeight);
+      let indices = lzwDecode(minCodeSize, lzwData, framePixels);
       if (interlaced) {
         indices = deinterlaceIndices(indices, frameWidth, frameHeight);
       }
 
+      let prevRegion: Uint8Array | null = null;
+      if (needsPrevious) {
+        prevRegion = allocateGifBuffer(frameBytes, "disposal buffer");
+        for (let y = 0; y < frameHeight; y++) {
+          const srcOff = ((top + y) * width + left) * 4;
+          prevRegion.set(currentCanvas.subarray(srcOff, srcOff + frameWidth * 4), y * frameWidth * 4);
+        }
+      }
+
       for (let y = 0; y < frameHeight; y++) {
         const cy = top + y;
-        if (cy >= height) continue;
         for (let x = 0; x < frameWidth; x++) {
           const cx = left + x;
-          if (cx >= width) continue;
           const colorIdx = indices[y * frameWidth + x]!;
           if (transparentFlag && colorIdx === transparentIndex) {
             continue;
@@ -304,20 +336,21 @@ export function decodeGifFramesRgba(bytes: Uint8Array): DecodedGifFrame[] {
         }
       }
 
+      const frameRgba = allocateGifBuffer(canvasSize.byteLength, "frame buffer");
+      frameRgba.set(currentCanvas);
       frames.push({
         width,
         height,
         delayMs,
-        rgba: currentCanvas.slice()
+        rgba: frameRgba
       });
+      retainedBytes += canvasSize.byteLength;
 
       if (disposalMethod === 2) {
         for (let y = 0; y < frameHeight; y++) {
           const cy = top + y;
-          if (cy >= height) continue;
           for (let x = 0; x < frameWidth; x++) {
             const cx = left + x;
-            if (cx >= width) continue;
             const dstOff = (cy * width + cx) * 4;
             currentCanvas[dstOff] = 0;
             currentCanvas[dstOff + 1] = 0;
@@ -325,8 +358,12 @@ export function decodeGifFramesRgba(bytes: Uint8Array): DecodedGifFrame[] {
             currentCanvas[dstOff + 3] = 0;
           }
         }
-      } else if (disposalMethod === 3 && prevCanvas) {
-        currentCanvas.set(prevCanvas);
+      } else if (disposalMethod === 3 && prevRegion) {
+        for (let y = 0; y < frameHeight; y++) {
+          const dstOff = ((top + y) * width + left) * 4;
+          const srcOff = y * frameWidth * 4;
+          currentCanvas.set(prevRegion.subarray(srcOff, srcOff + frameWidth * 4), dstOff);
+        }
       }
 
       disposalMethod = 0;

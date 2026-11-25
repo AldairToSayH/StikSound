@@ -5,6 +5,7 @@ import {
   type ImageProbeInfo,
   type VideoFormat
 } from "@stiksound/core";
+import { assertGifCanvas, assertGifFrameDescriptor } from "./gif-limits";
 
 function readU16LE(b: Uint8Array, o: number): number {
   return (b[o] ?? 0) | ((b[o + 1] ?? 0) << 8);
@@ -40,6 +41,19 @@ function assertDimensionsSafe(width: number, height: number): void {
   if (width * height > LIMITS.MAX_IMAGE_PIXELS) {
     throw new StikSoundError("file-too-large", `Image exceeds 40 megapixels (${width}x${height}).`);
   }
+}
+
+function skipGifSubBlocks(bytes: Uint8Array, start: number): number {
+  let pos = start;
+  while (pos < bytes.byteLength) {
+    const subLen = bytes[pos++]!;
+    if (subLen === 0) return pos;
+    if (subLen > bytes.byteLength - pos) {
+      throw new StikSoundError("unsupported-image", "Truncated GIF data sub-block.");
+    }
+    pos += subLen;
+  }
+  throw new StikSoundError("unsupported-image", "Truncated GIF sub-block chain.");
 }
 
 export function sniffImageHeader(bytes: Uint8Array): ImageProbeInfo {
@@ -190,12 +204,15 @@ export function sniffImageHeader(bytes: Uint8Array): ImageProbeInfo {
     }
     const width = readU16LE(bytes, 6);
     const height = readU16LE(bytes, 8);
-    assertDimensionsSafe(width, height);
+    assertGifCanvas(width, height);
 
     const packed = bytes[10] ?? 0;
     let pos = 13;
     if ((packed & 0x80) !== 0) {
       const gctSize = 3 * (1 << ((packed & 0x07) + 1));
+      if (pos + gctSize > bytes.byteLength) {
+        throw new StikSoundError("unsupported-image", "Truncated GIF global color table.");
+      }
       pos += gctSize;
     }
 
@@ -209,43 +226,58 @@ export function sniffImageHeader(bytes: Uint8Array): ImageProbeInfo {
       if (block === 0x3b) break; // Trailer
       if (block === 0x21) {
         // Extension
+        if (pos >= bytes.byteLength) {
+          throw new StikSoundError("unsupported-image", "Truncated GIF extension.");
+        }
         const label = bytes[pos++];
-        if (label === 0xf9 && pos + 5 < bytes.byteLength) {
+        if (label === 0xf9) {
+          if (pos >= bytes.byteLength) {
+            throw new StikSoundError("unsupported-image", "Truncated GIF graphic control extension.");
+          }
           const blockSize = bytes[pos]!;
+          if (blockSize < 4 || pos + 1 + blockSize > bytes.byteLength) {
+            throw new StikSoundError("unsupported-image", "Malformed GIF graphic control extension.");
+          }
           const gcePacked = bytes[pos + 1]!;
           if ((gcePacked & 0x01) !== 0) hasAlpha = true;
           const delayCs = readU16LE(bytes, pos + 2);
           pendingDelayMs = (delayCs === 0 ? 10 : delayCs) * 10;
           pos += 1 + blockSize;
-          // Skip sub-block terminator
-          while (pos < bytes.byteLength && bytes[pos]! > 0) {
-            pos += 1 + bytes[pos]!;
-          }
-          pos++;
+          pos = skipGifSubBlocks(bytes, pos);
         } else {
-          // Other extension sub-blocks
-          while (pos < bytes.byteLength) {
-            const subLen = bytes[pos++]!;
-            if (subLen === 0) break;
-            pos += subLen;
-          }
+          pos = skipGifSubBlocks(bytes, pos);
         }
       } else if (block === 0x2c) {
         // Image descriptor
-        if (pos + 9 > bytes.byteLength) break;
+        if (pos + 9 > bytes.byteLength) {
+          throw new StikSoundError("unsupported-image", "Truncated GIF image descriptor.");
+        }
+        const left = readU16LE(bytes, pos);
+        const top = readU16LE(bytes, pos + 2);
+        const frameWidth = readU16LE(bytes, pos + 4);
+        const frameHeight = readU16LE(bytes, pos + 6);
         const imgPacked = bytes[pos + 8]!;
         pos += 9;
+        assertGifFrameDescriptor(width, height, left, top, frameWidth, frameHeight);
         if ((imgPacked & 0x80) !== 0) {
           const lctSize = 3 * (1 << ((imgPacked & 0x07) + 1));
+          if (pos + lctSize > bytes.byteLength) {
+            throw new StikSoundError("unsupported-image", "Truncated GIF local color table.");
+          }
           pos += lctSize;
         }
-        pos++; // LZW min code size
-        while (pos < bytes.byteLength) {
-          const subLen = bytes[pos++]!;
-          if (subLen === 0) break;
-          pos += subLen;
+        if (pos >= bytes.byteLength) {
+          throw new StikSoundError("unsupported-image", "Truncated GIF image data.");
         }
+        pos++; // LZW min code size
+        pos = skipGifSubBlocks(bytes, pos);
         frameCount++;
+        if (frameCount > LIMITS.MAX_GIF_FRAMES) {
+          throw new StikSoundError(
+            "file-too-large",
+            `GIF exceeds the ${LIMITS.MAX_GIF_FRAMES} frame limit.`
+          );
+        }
         durationMs += pendingDelayMs;
         pendingDelayMs = 100;
       } else {

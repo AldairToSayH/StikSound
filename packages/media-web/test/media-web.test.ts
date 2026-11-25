@@ -203,3 +203,115 @@ describe("packages/media-web", () => {
     ).rejects.toMatchObject({ code: "unsupported-codec" });
   });
 });
+
+function makeGif(width: number, height: number, frames: Array<{
+  left?: number;
+  top?: number;
+  width: number;
+  height: number;
+  data: number[];
+  minCodeSize?: number;
+  gce?: { disposal?: number; delayCs?: number; transparentIndex?: number };
+}>): Uint8Array {
+  const bytes: number[] = [0x47, 0x49, 0x46, 0x38, 0x39, 0x61, width & 0xff, (width >> 8) & 0xff, height & 0xff, (height >> 8) & 0xff, 0x91, 0x00, 0x00];
+  bytes.push(0xff, 0x00, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00);
+  for (const frame of frames) {
+    if (frame.gce) {
+      const disposal = frame.gce.disposal ?? 0;
+      const delayCs = frame.gce.delayCs ?? 10;
+      const transparentIndex = frame.gce.transparentIndex;
+      const packed = ((disposal & 0x07) << 2) | (transparentIndex !== undefined ? 0x01 : 0x00);
+      bytes.push(0x21, 0xf9, 0x04, packed, delayCs & 0xff, (delayCs >> 8) & 0xff, transparentIndex ?? 0, 0x00);
+    }
+    const left = frame.left ?? 0;
+    const top = frame.top ?? 0;
+    const minCodeSize = frame.minCodeSize ?? 2;
+    bytes.push(0x2c, left & 0xff, (left >> 8) & 0xff, top & 0xff, (top >> 8) & 0xff, frame.width & 0xff, (frame.width >> 8) & 0xff, frame.height & 0xff, (frame.height >> 8) & 0xff, 0x00, minCodeSize, frame.data.length, ...frame.data, 0x00);
+  }
+  bytes.push(0x3b);
+  return new Uint8Array(bytes);
+}
+
+const D0 = [0x04, 0x80, 0x02];
+const D1 = [0x8c, 0x01];
+const D2 = [0x54, 0x01];
+
+describe("packages/media-web gif resource limits", () => {
+  it("rejects a GIF whose frame descriptor claims excessive dimensions before allocation", () => {
+    const gif = makeGif(2, 2, [
+      { width: 2, height: 2, data: D0 },
+      { width: 65535, height: 65535, data: D0 }
+    ]);
+    expect(() => decodeGifFramesRgba(gif)).toThrowError(/file-too-large/);
+    expect(() => sniffImageHeader(gif)).toThrowError(/file-too-large/);
+  });
+
+  it("rejects a GIF with excessive frame count", () => {
+    const frames = Array.from({ length: 301 }, () => ({ width: 1, height: 1, data: D0 }));
+    const gif = makeGif(1, 1, frames);
+    expect(() => decodeGifFramesRgba(gif)).toThrowError(/file-too-large/);
+    expect(() => sniffImageHeader(gif)).toThrowError(/file-too-large/);
+  });
+
+  it("rejects a GIF that exceeds the cumulative decoded RGBA memory budget", () => {
+    const frames = Array.from({ length: 300 }, () => ({ width: 512, height: 512, data: D0 }));
+    const gif = makeGif(512, 512, frames);
+    expect(() => decodeGifFramesRgba(gif)).toThrowError(/file-too-large/);
+  });
+
+  it("rejects a GIF with invalid frame bounds", () => {
+    const gif = makeGif(4, 4, [{ left: 3, top: 3, width: 2, height: 2, data: D0 }]);
+    expect(() => decodeGifFramesRgba(gif)).toThrowError(/unsupported-image/);
+    expect(() => sniffImageHeader(gif)).toThrowError(/unsupported-image/);
+  });
+
+  it("accepts a valid animated GIF just below the applicable limits", () => {
+    const frames = Array.from({ length: 299 }, () => ({ width: 1, height: 1, data: D0 }));
+    const gif = makeGif(1, 1, frames);
+    const decoded = decodeGifFramesRgba(gif);
+    expect(decoded).toHaveLength(299);
+    const probe = sniffImageHeader(gif);
+    expect(probe.frame_count).toBe(299);
+  });
+
+  it("preserves disposal methods, transparency and timing", () => {
+    const gif = makeGif(2, 2, [
+      { width: 2, height: 2, data: D0, gce: { disposal: 0, delayCs: 20 } },
+      { left: 0, top: 0, width: 1, height: 1, data: D1, gce: { disposal: 2, delayCs: 30, transparentIndex: 3 } },
+      { left: 1, top: 1, width: 1, height: 1, data: D2, gce: { disposal: 0, delayCs: 40 } }
+    ]);
+    const decoded = decodeGifFramesRgba(gif);
+    expect(decoded).toHaveLength(3);
+    expect(decoded[0]!.delayMs).toBe(200);
+    expect(decoded[1]!.delayMs).toBe(300);
+    expect(decoded[2]!.delayMs).toBe(400);
+    expect(Array.from(decoded[0]!.rgba.slice(0, 4))).toEqual([255, 0, 0, 255]);
+    expect(Array.from(decoded[1]!.rgba.slice(0, 4))).toEqual([0, 255, 0, 255]);
+    expect(Array.from(decoded[1]!.rgba.slice(4, 8))).toEqual([255, 0, 0, 255]);
+    expect(Array.from(decoded[2]!.rgba.slice(0, 4))).toEqual([0, 0, 0, 0]);
+    expect(Array.from(decoded[2]!.rgba.slice(12, 16))).toEqual([0, 0, 255, 255]);
+    expect(Array.from(decoded[2]!.rgba.slice(4, 8))).toEqual([255, 0, 0, 255]);
+  });
+
+  it("restores the previous canvas for disposal method 3", () => {
+    const gif = makeGif(2, 2, [
+      { width: 2, height: 2, data: D0, gce: { disposal: 1, delayCs: 10 } },
+      { left: 0, top: 0, width: 1, height: 1, data: D1, gce: { disposal: 3, delayCs: 10 } },
+      { left: 1, top: 1, width: 1, height: 1, data: D2, gce: { disposal: 0, delayCs: 10 } }
+    ]);
+    const decoded = decodeGifFramesRgba(gif);
+    expect(decoded).toHaveLength(3);
+    expect(Array.from(decoded[2]!.rgba.slice(0, 4))).toEqual([255, 0, 0, 255]);
+    expect(Array.from(decoded[2]!.rgba.slice(12, 16))).toEqual([0, 0, 255, 255]);
+  });
+
+  it("skips transparent pixels declared by the graphic control extension", () => {
+    const gif = makeGif(2, 2, [
+      { width: 2, height: 2, data: D0, gce: { disposal: 0, delayCs: 10 } },
+      { left: 1, top: 0, width: 1, height: 1, data: D0, gce: { disposal: 0, delayCs: 10, transparentIndex: 0 } }
+    ]);
+    const decoded = decodeGifFramesRgba(gif);
+    expect(Array.from(decoded[1]!.rgba.slice(4, 8))).toEqual([255, 0, 0, 255]);
+  });
+});
+
