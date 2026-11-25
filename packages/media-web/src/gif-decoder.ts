@@ -3,7 +3,8 @@ import {
   allocateGifBuffer,
   assertGifCanvas,
   assertGifDecodedMemory,
-  assertGifFrameDescriptor
+  assertGifFrameDescriptor,
+  gifFrameWorkingBytes
 } from "./gif-limits";
 
 export interface DecodedGifFrame {
@@ -290,9 +291,13 @@ export function decodeGifFramesRgba(bytes: Uint8Array): DecodedGifFrame[] {
       }
 
       const needsPrevious = disposalMethod === 3;
-      const indexBytes = framePixels * (interlaced ? 2 : 1);
-      const workingBytes =
-        canvasSize.byteLength + totalDataLen + indexBytes + (needsPrevious ? frameBytes : 0);
+      const workingBytes = gifFrameWorkingBytes(
+        canvasSize.byteLength,
+        totalDataLen,
+        framePixels,
+        interlaced,
+        disposalMethod
+      );
       assertGifDecodedMemory(retainedBytes, canvasSize.byteLength, workingBytes);
 
       const lzwData = allocateGifBuffer(totalDataLen, "LZW data");
