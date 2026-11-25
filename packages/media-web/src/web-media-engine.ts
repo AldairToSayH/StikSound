@@ -21,7 +21,11 @@ import { Muxer as Mp4Muxer, ArrayBufferTarget as Mp4Target } from "mp4-muxer";
 import { Muxer as WebmMuxer, ArrayBufferTarget as WebmTarget } from "webm-muxer";
 import { computePeaksFromFloat32, decodeWavToMonoFloat32, encodeWavBytes, trimPcmSamples } from "./audio-utils";
 import { decodeGifFramesRgba, type DecodedGifFrame } from "./gif-decoder";
-import { scheduleGifFramesForDuration } from "./gif-scheduler";
+import {
+  gifFrameDelayMs,
+  resampleGifScheduleForEncoder,
+  scheduleGifFramesForDuration
+} from "./gif-scheduler";
 import { compositeRgbaOnMatte, cropAndFitSquareRgba } from "./image-utils";
 import { sniffAudioContainer, sniffImageHeader, sniffVideoContainer } from "./sniffers";
 import { clipTimeSec, drawCroppedFrame, openVideo, seekVideo, type OpenedVideo } from "./video-utils";
@@ -119,6 +123,13 @@ export function prepareAnimatedGifFrames(
   }
 
   return prepared;
+}
+
+interface EncoderCanvasFrame {
+  canvas: OffscreenCanvas;
+  timestampUs: number;
+  durationUs: number;
+  keyFrame: boolean;
 }
 
 export class WebMediaEngine implements MediaEngine {
@@ -547,7 +558,7 @@ export class WebMediaEngine implements MediaEngine {
         timestamp: f.timestampUs,
         duration: f.durationUs
       });
-      videoEncoder.encode(vf, { keyFrame: i === 0 || i % 24 === 0 });
+      videoEncoder.encode(vf, { keyFrame: f.keyFrame });
       vf.close();
     }
 
@@ -803,7 +814,7 @@ export class WebMediaEngine implements MediaEngine {
     request: VideoRenderRequest,
     durationMs: number,
     outputSize: number
-  ): Promise<Array<{ canvas: OffscreenCanvas; timestampUs: number; durationUs: number }>> {
+  ): Promise<EncoderCanvasFrame[]> {
     const isWebm = request.container === "webm-alpha";
     const cropX = request.cropX ?? 0.5;
     const cropY = request.cropY ?? 0.5;
@@ -863,7 +874,7 @@ export class WebMediaEngine implements MediaEngine {
             crop.outputSize,
             crop.outputSize
           );
-          const delayMs = Math.max(20, Math.round((vf.duration ?? 100_000) / 1000));
+          const delayMs = gifFrameDelayMs(vf.duration == null ? null : vf.duration / 1000);
           vf.close();
           decodedCanvases.push(c);
           timings.push({ frameIndex: i, delayMs });
@@ -873,31 +884,12 @@ export class WebMediaEngine implements MediaEngine {
 
       if (decodedCanvases.length > 0 && timings.length > 0) {
         const scheduled = scheduleGifFramesForDuration(timings, durationMs);
-        // Resample onto a steady 24 fps timeline so hardware H.264/VP9 encoders advance cleanly
-        const totalUs = Math.max(41_667, durationMs * 1000);
-        const fps = 24;
-        const resampled: Array<{ canvas: OffscreenCanvas; timestampUs: number; durationUs: number }> = [];
-        let schedIdx = 0;
-
-        for (let frameIdx = 0; ; frameIdx++) {
-          const tUs = Math.round((frameIdx * 1_000_000) / fps);
-          if (tUs >= totalUs) break;
-          while (
-            schedIdx < scheduled.length - 1 &&
-            tUs >= scheduled[schedIdx]!.timestampUs + scheduled[schedIdx]!.durationUs
-          ) {
-            schedIdx++;
-          }
-          const nextTUs = Math.min(totalUs, Math.round(((frameIdx + 1) * 1_000_000) / fps));
-          const durUs = Math.max(1, nextTUs - tUs);
-          const active = scheduled[schedIdx]!;
-          resampled.push({
-            canvas: decodedCanvases[active.frameIndex]!,
-            timestampUs: tUs,
-            durationUs: durUs
-          });
-        }
-        return resampled;
+        return resampleGifScheduleForEncoder(scheduled, durationMs).map((f) => ({
+          canvas: decodedCanvases[f.frameIndex]!,
+          timestampUs: f.timestampUs,
+          durationUs: f.durationUs,
+          keyFrame: f.keyFrame
+        }));
       }
     }
 
@@ -915,12 +907,17 @@ export class WebMediaEngine implements MediaEngine {
     const fps = 10;
     const stepUs = 100_000;
     const totalUs = durationMs * 1000;
-    const out: Array<{ canvas: OffscreenCanvas; timestampUs: number; durationUs: number }> = [];
+    const out: EncoderCanvasFrame[] = [];
     for (let t = 0; t < totalUs; t += stepUs) {
-      out.push({ canvas, timestampUs: t, durationUs: Math.min(stepUs, totalUs - t) });
+      out.push({
+        canvas,
+        timestampUs: t,
+        durationUs: Math.min(stepUs, totalUs - t),
+        keyFrame: out.length % 24 === 0
+      });
     }
     if (out.length === 0) {
-      out.push({ canvas, timestampUs: 0, durationUs: 100_000 * (10 / fps) });
+      out.push({ canvas, timestampUs: 0, durationUs: 100_000 * (10 / fps), keyFrame: true });
     }
     return out;
   }
