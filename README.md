@@ -2,7 +2,7 @@
 
 <img src="docs/assets/app-icon.svg" alt="StikSound App Icon" width="120" height="120" />
 
-# Sticker_con_Sonido
+# StikSound
 
 Proyecto Android basado en StikSound. Se conserva el código fuente original, su historial y los avisos de licencia MIT y Apache 2.0. La integración Android está en `apps/web/android`; las funciones de exportación y compartir deben verificarse en un dispositivo antes de distribuir el APK como versión estable.
 
