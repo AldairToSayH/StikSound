@@ -10,6 +10,8 @@ export interface TimelineTrimBarProps {
   peaks: PeakBuckets | null;
   isPlaying: boolean;
   isBusy: boolean;
+  /** Hide the MyInstants URL field and show only the file button. Default true. */
+  showUrlInput?: boolean;
   urlInput: string;
   onUrlInputChange: (value: string) => void;
   onSubmitUrl: (url: string) => void;
@@ -39,6 +41,7 @@ export const TimelineTrimBar: React.FC<TimelineTrimBarProps> = ({
   peaks,
   isPlaying,
   isBusy,
+  showUrlInput = true,
   urlInput,
   onUrlInputChange,
   onSubmitUrl,
@@ -146,26 +149,29 @@ export const TimelineTrimBar: React.FC<TimelineTrimBarProps> = ({
             if (urlInput.trim()) onSubmitUrl(urlInput.trim());
           }}
         >
-          <input
-            type="url"
-            data-testid="myinstants-url-input"
-            className="stik-url-input"
-            value={urlInput}
-            disabled={isBusy}
-            placeholder={labels.placeholder}
-            onChange={(e) => onUrlInputChange(e.target.value)}
-            onPaste={(e) => {
-              const text = e.clipboardData.getData("text/plain").trim();
-              if (/^https?:\/\//i.test(text)) {
-                e.preventDefault();
-                onUrlInputChange(text);
-                onSubmitUrl(text);
-              }
-            }}
-          />
+          {showUrlInput && (
+            <input
+              type="url"
+              data-testid="myinstants-url-input"
+              className="stik-url-input"
+              value={urlInput}
+              disabled={isBusy}
+              placeholder={labels.placeholder}
+              onChange={(e) => onUrlInputChange(e.target.value)}
+              onPaste={(e) => {
+                const text = e.clipboardData.getData("text/plain").trim();
+                if (/^https?:\/\//i.test(text)) {
+                  e.preventDefault();
+                  onUrlInputChange(text);
+                  onSubmitUrl(text);
+                }
+              }}
+            />
+          )}
           <button
             type="button"
-            className="stik-pill-btn"
+            data-testid="audio-pick-btn"
+            className={`stik-pill-btn${showUrlInput ? "" : " stik-pill-wide"}`}
             disabled={isBusy}
             onClick={() => fileRef.current?.click()}
           >

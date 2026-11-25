@@ -41,5 +41,6 @@
   "aboutRights": "Sounds from MyInstants remain the property of their owners. StikSound runs 100% locally with no external dependencies.",
   "exportSuccessVideo": "Video downloaded. You can now upload it to WhatsApp as a sound sticker.",
   "exportSuccessBundle": "Bundle saved. Note: it contains image and sound as separate files; WhatsApp may treat the image as a normal sticker.",
-  "close": "Close"
+  "close": "Close",
+  "shareReadyToast": "Video ready. Tap \"Share\" to send it to WhatsApp or save it to Photos."
 }

@@ -18,12 +18,28 @@ import enLocale from "../locales/en.json";
 import esLocale from "../locales/es.json";
 import { TimelineTrimBar } from "./TimelineTrimBar";
 
+export type ShareOutcome = "shared" | "cancelled" | "needs-tap";
+
 export interface ShellBridge {
   saveArtifact(artifact: ExportArtifact): Promise<string | void>;
   copyArtifactToClipboard?(artifact: ExportArtifact): Promise<void>;
+  /**
+   * Mobile web: hand the video to the OS share sheet (WhatsApp, Save Video, Files).
+   * Return "needs-tap" when the browser refused because the user gesture expired.
+   */
+  shareArtifact?(artifact: ExportArtifact): Promise<ShareOutcome>;
   saveProjectZip?(zipBytes: Uint8Array, suggestedName: string): Promise<void>;
   openProjectZip?(): Promise<Uint8Array | null>;
 }
+
+export interface PlatformOptions {
+  /** Offer transparent WebM output. Mobile Safari cannot encode it. Default true. */
+  transparentVideo?: boolean;
+  /** Show the MyInstants URL field. Plain web pages are blocked by CORS. Default true. */
+  myInstantsUrl?: boolean;
+}
+
+export type UiLabels = typeof esLocale;
 
 export interface StikSoundMinimalAppProps {
   engine: MediaEngine;
@@ -31,9 +47,11 @@ export interface StikSoundMinimalAppProps {
   shell: ShellBridge;
   initialLocale?: LocaleCode;
   initialState?: ProjectWorkspaceState;
+  platform?: PlatformOptions;
+  labelOverrides?: Partial<Record<LocaleCode, Partial<UiLabels>>>;
 }
 
-const LOCALES = { es: esLocale, en: enLocale } as const;
+const LOCALES: Record<LocaleCode, UiLabels> = { es: esLocale, en: enLocale };
 
 function audioMimeType(format: string): string {
   switch (format) {
@@ -57,8 +75,12 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
   providers = [],
   shell,
   initialLocale = "es",
-  initialState
+  initialState,
+  platform,
+  labelOverrides
 }) => {
+  const allowTransparent = platform?.transparentVideo !== false;
+  const allowMyInstantsUrl = platform?.myInstantsUrl !== false;
   const controller = useMemo(() => new ProjectController(engine, providers), [engine, providers]);
   const [locale, setLocale] = useState<LocaleCode>(initialLocale);
   const [project, setProject] = useState<ProjectWorkspaceState>(() => initialState ?? createProject());
@@ -78,7 +100,10 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const playbackTimerRef = useRef<number | null>(null);
 
-  const copy = LOCALES[locale];
+  const copy: UiLabels = useMemo(
+    () => ({ ...LOCALES[locale], ...labelOverrides?.[locale] }),
+    [locale, labelOverrides]
+  );
   const sticker = project.manifest.stickers[0];
   const audio = project.manifest.audios[0];
   const assoc = project.manifest.associations[0];
@@ -229,13 +254,13 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
         }
       }
       const text = e.clipboardData?.getData("text/plain")?.trim();
-      if (text && /^https?:\/\//i.test(text)) {
+      if (allowMyInstantsUrl && text && /^https?:\/\//i.test(text)) {
         e.preventDefault();
         setUrlInput(text);
         await importMyInstantsUrl(text);
       }
     },
-    [importStickerBytes, importMyInstantsUrl]
+    [importStickerBytes, importMyInstantsUrl, allowMyInstantsUrl]
   );
 
   useEffect(() => {
@@ -297,6 +322,11 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
   }
 
   const copyArtifactNow = async (artifact: ExportArtifact) => {
+    if (shell.shareArtifact) {
+      const outcome = await shell.shareArtifact(artifact);
+      setStatusMessage(outcome === "needs-tap" ? copy.shareReadyToast : null);
+      return;
+    }
     if (shell.copyArtifactToClipboard) {
       await shell.copyArtifactToClipboard(artifact);
       setStatusMessage(copy.copiedReadyToast);
@@ -324,7 +354,7 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
     setStatusMessage(null);
     try {
       const compatibleProfile: ExportProfileId =
-        activeProfile === "video-webm-alpha" ? "video-webm-alpha" : "video-mp4";
+        activeProfile === "video-webm-alpha" && allowTransparent ? "video-webm-alpha" : "video-mp4";
       const artifact =
         readyArtifact ?? (await controller.exportProject(project, compatibleProfile, maxDurationMs));
       setReadyArtifact(artifact);
@@ -413,8 +443,10 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
     });
   };
 
-  // Zero-click hover cropping when image is not already 1:1
-  const handleStageMouseMove = (e: React.MouseEvent<HTMLElement>) => {
+  // Zero-click hover cropping when image is not already 1:1.
+  // Pointer events cover the mouse (hover) and touch (finger drag, see .crop-enabled CSS).
+  const canCrop = Boolean(sticker) && sticker!.width !== sticker!.height;
+  const handleStagePointerMove = (e: React.PointerEvent<HTMLElement>) => {
     if (!sticker || sticker.width === sticker.height) return;
     const rect = e.currentTarget.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
@@ -429,7 +461,7 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
     );
   };
 
-  const isTransparentSelected = activeProfile === "video-webm-alpha";
+  const isTransparentSelected = allowTransparent && activeProfile === "video-webm-alpha";
   const currentMatte = sticker?.edit.matte_color ?? LIMITS.DEFAULT_MATTE_COLOR;
   const cropX = sticker?.edit.crop_x ?? 0.5;
   const cropY = sticker?.edit.crop_y ?? 0.5;
@@ -508,14 +540,16 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
             >
               {copy.downloadFmtMp4}
             </button>
-            <button
-              type="button"
-              data-testid="download-fmt-video-webm-alpha"
-              disabled={!audio || !trimValid}
-              onClick={() => handleDownloadWithFormat("video-webm-alpha")}
-            >
-              {copy.downloadFmtWebm}
-            </button>
+            {allowTransparent && (
+              <button
+                type="button"
+                data-testid="download-fmt-video-webm-alpha"
+                disabled={!audio || !trimValid}
+                onClick={() => handleDownloadWithFormat("video-webm-alpha")}
+              >
+                {copy.downloadFmtWebm}
+              </button>
+            )}
             <button
               type="button"
               data-testid="download-fmt-sound-bundle"
@@ -666,9 +700,9 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
       ) : (
         <main
           data-testid="sticker-zone"
-          className={`stik-sticker-stage ${sticker ? "has-sticker" : "empty"}`}
+          className={`stik-sticker-stage ${sticker ? "has-sticker" : "empty"}${canCrop ? " crop-enabled" : ""}`}
           style={stageBgStyle}
-          onMouseMove={handleStageMouseMove}
+          onPointerMove={handleStagePointerMove}
           onDragOver={(e) => e.preventDefault()}
           onDrop={async (e) => {
             e.preventDefault();
@@ -727,14 +761,16 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
       {!readyArtifact && sticker && sticker.has_alpha && (
         <div className="stik-transparency-bar" data-testid="transparency-picker">
           <span className="stik-trans-label">{copy.transparencyLabel}</span>
-          <button
-            type="button"
-            data-testid="matte-transparent-btn"
-            className={`stik-trans-chip ${isTransparentSelected ? "active" : ""}`}
-            onClick={selectTransparentMode}
-          >
-            {copy.modeTransparent}
-          </button>
+          {allowTransparent && (
+            <button
+              type="button"
+              data-testid="matte-transparent-btn"
+              className={`stik-trans-chip ${isTransparentSelected ? "active" : ""}`}
+              onClick={selectTransparentMode}
+            >
+              {copy.modeTransparent}
+            </button>
+          )}
           <button
             type="button"
             data-testid="matte-white-btn"
@@ -780,6 +816,7 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
         peaks={project.waveformPeaks}
         isPlaying={isPlaying}
         isBusy={isBusy}
+        showUrlInput={allowMyInstantsUrl}
         urlInput={urlInput}
         onUrlInputChange={setUrlInput}
         onSubmitUrl={importMyInstantsUrl}

@@ -373,6 +373,8 @@ export class WebMediaEngine implements MediaEngine {
     drawSticker();
 
     const audioCtx = new AudioContext({ sampleRate: 48000 });
+    // Mobile Safari starts contexts "suspended"; a suspended context records silence.
+    await audioCtx.resume().catch(() => undefined);
     const audioBuffer = audioCtx.createBuffer(1, pcm.samples.length, 48000);
     audioBuffer.copyToChannel(pcm.samples.slice(), 0);
     const source = audioCtx.createBufferSource();

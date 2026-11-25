@@ -190,6 +190,11 @@ textarea {
   border-style: solid;
 }
 
+/* Non-square sticker: let a finger drag reframe the 1:1 crop instead of scrolling */
+.stik-sticker-stage.crop-enabled {
+  touch-action: none;
+}
+
 .stik-empty-sticker {
   text-align: center;
   padding: 20px;
@@ -286,6 +291,12 @@ textarea {
   padding: 8px 12px;
   font-size: 12px;
   cursor: pointer;
+}
+
+.stik-pill-btn.stik-pill-wide {
+  flex: 1;
+  padding: 12px;
+  font-size: 14px;
 }
 
 .stik-timeline-active {

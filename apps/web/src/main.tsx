@@ -1,0 +1,154 @@
+import React from "react";
+import { createRoot } from "react-dom/client";
+import type { ExportArtifact, LocaleCode } from "@stiksound/core";
+import { WebMediaEngine } from "@stiksound/media-web";
+import {
+  StikSoundMinimalApp,
+  type ShareOutcome,
+  type ShellBridge,
+  type UiLabels
+} from "@stiksound/ui";
+import "../../../packages/ui/src/styles.css";
+import "./mobile.css";
+
+/**
+ * StikSound web / PWA shell, aimed at iPhone Safari ("Add to Home Screen").
+ *
+ * Differences from the Chrome extension shell:
+ * - No MyInstants links: a plain web page cannot read myinstants.com (no CORS headers),
+ *   and routing it through a proxy would break the "nothing leaves your device" promise.
+ * - Output goes through the system share sheet (WhatsApp, Save Video, Save to Files)
+ *   because iOS has no way to put a video file on the clipboard from a web page.
+ * - No transparent WebM: Safari cannot encode VP9 with alpha.
+ */
+
+const isTouch = window.matchMedia?.("(pointer: coarse)").matches ?? false;
+
+function toFile(artifact: ExportArtifact): File {
+  return new File([artifact.bytes.slice().buffer], artifact.fileName, { type: artifact.mimeType });
+}
+
+function canShareFile(file: File): boolean {
+  try {
+    return typeof navigator.share === "function" && navigator.canShare?.({ files: [file] }) === true;
+  } catch {
+    return false;
+  }
+}
+
+function downloadFile(file: File): void {
+  const url = URL.createObjectURL(file);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = file.name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
+async function shareFile(file: File): Promise<ShareOutcome | "unsupported"> {
+  if (!canShareFile(file)) return "unsupported";
+  try {
+    await navigator.share({ files: [file] });
+    return "shared";
+  } catch (err) {
+    const name = (err as DOMException | undefined)?.name;
+    if (name === "AbortError") return "cancelled";
+    // Safari only allows share() right after a tap. Encoding takes a few seconds,
+    // so the first attempt can expire; the UI then asks for one more tap.
+    if (name === "NotAllowedError") return "needs-tap";
+    throw err;
+  }
+}
+
+/** On phones, saving goes through the share sheet when it can (Save Video / Save to Files). */
+async function saveFile(file: File): Promise<void> {
+  if (isTouch) {
+    const outcome = await shareFile(file);
+    if (outcome === "shared" || outcome === "cancelled") return;
+  }
+  downloadFile(file);
+}
+
+const shell: ShellBridge = {
+  async shareArtifact(artifact) {
+    const file = toFile(artifact);
+    const outcome = await shareFile(file);
+    if (outcome === "unsupported") {
+      downloadFile(file);
+      return "shared";
+    }
+    return outcome;
+  },
+  async saveArtifact(artifact) {
+    await saveFile(toFile(artifact));
+  },
+  async saveProjectZip(zipBytes, suggestedName) {
+    await saveFile(new File([zipBytes.slice().buffer], suggestedName, { type: "application/zip" }));
+  }
+};
+
+const webLabels: Record<LocaleCode, Partial<UiLabels>> = {
+  es: {
+    exportTooltip: "Crear el video y compartirlo",
+    exportDisabledMissingAudio: "Agrega un audio (MP3, M4A, WAV)",
+    audioPickBtn: "🎵 Elegir audio (MP3, M4A, WAV)",
+    copyAgainBtn: "Compartir",
+    downloadTooltip: "Guardar",
+    downloadBtnLabel: "Guardar",
+    downloadChooseFormat: "Elige qué guardar:",
+    downloadFmtMp4: "Video MP4 (5 s)",
+    exportSuccessVideo: "Listo. Si no elegiste dónde guardarlo, búscalo en Archivos → Descargas.",
+    aboutRights:
+      "Versión web. Todo se procesa en tu teléfono; nada se sube a internet. Para usar un sonido de MyInstants, descárgalo primero desde Safari y luego elígelo con el botón de audio.",
+    ...(isTouch
+      ? {
+          stickerDropTitle: "Toca para elegir tu sticker",
+          stickerDropHint: "PNG, GIF, WebP o JPG desde Fotos o Archivos",
+          hoverCropHint: "Arrastra para encuadrar"
+        }
+      : {})
+  },
+  en: {
+    exportTooltip: "Make the video and share it",
+    exportDisabledMissingAudio: "Add a sound (MP3, M4A, WAV)",
+    audioPickBtn: "🎵 Choose sound (MP3, M4A, WAV)",
+    copyAgainBtn: "Share",
+    downloadTooltip: "Save",
+    downloadBtnLabel: "Save",
+    downloadChooseFormat: "Choose what to save:",
+    downloadFmtMp4: "MP4 video (5 s)",
+    exportSuccessVideo: "Done. If you didn't pick a place, look in Files → Downloads.",
+    aboutRights:
+      "Web version. Everything runs on your phone; nothing is uploaded. To use a MyInstants sound, download it in Safari first, then pick it with the sound button.",
+    ...(isTouch
+      ? {
+          stickerDropTitle: "Tap to choose your sticker",
+          stickerDropHint: "PNG, GIF, WebP or JPG from Photos or Files",
+          hoverCropHint: "Drag to frame"
+        }
+      : {})
+  }
+};
+
+const locale: LocaleCode = navigator.language.toLowerCase().startsWith("es") ? "es" : "en";
+
+createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <StikSoundMinimalApp
+      engine={new WebMediaEngine()}
+      providers={[]}
+      shell={shell}
+      initialLocale={locale}
+      platform={{ transparentVideo: false, myInstantsUrl: false }}
+      labelOverrides={webLabels}
+    />
+  </React.StrictMode>
+);
+
+if ("serviceWorker" in navigator && import.meta.env.PROD && window.isSecureContext) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => undefined);
+  });
+}
