@@ -113,7 +113,7 @@ export function validateProjectManifest(raw: unknown): ProjectManifest {
     if (!isPlainObject(s)) throw new StikSoundError("package-invalid", "Invalid sticker item.");
     assertAllowedKeys(
       s,
-      ["id", "file", "source_name", "format", "width", "height", "has_alpha", "animated", "edit"],
+      ["id", "file", "source_name", "format", "width", "height", "has_alpha", "animated", "duration_ms", "edit"],
       "sticker"
     );
     if (typeof s.id !== "string" || s.id.length < 4 || s.id.length > 64) {
@@ -140,6 +140,15 @@ export function validateProjectManifest(raw: unknown): ProjectManifest {
     }
     if (typeof s.has_alpha !== "boolean" || typeof s.animated !== "boolean") {
       throw new StikSoundError("package-invalid", "Invalid sticker boolean flags.");
+    }
+    if (
+      s.duration_ms !== undefined &&
+      (typeof s.duration_ms !== "number" ||
+        !Number.isInteger(s.duration_ms) ||
+        s.duration_ms < 0 ||
+        s.duration_ms > LIMITS.MAX_AUDIO_DURATION_MS)
+    ) {
+      throw new StikSoundError("package-invalid", "Invalid sticker.duration_ms.");
     }
     if (!isPlainObject(s.edit)) {
       throw new StikSoundError("package-invalid", "Missing sticker.edit.");

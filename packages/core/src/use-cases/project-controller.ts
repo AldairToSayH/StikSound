@@ -139,6 +139,7 @@ export class ProjectController {
       height: probe.height,
       has_alpha: probe.has_alpha,
       animated: probe.animated,
+      ...(probe.duration_ms > 0 ? { duration_ms: Math.round(probe.duration_ms) } : {}),
       edit: defaultStickerEdit()
     };
 
@@ -154,17 +155,31 @@ export class ProjectController {
       nextAssets.delete(existingAudio.file);
       existingAudio = undefined;
     }
+    const maxAudioMs = this.resolveEffectiveMaxAudioMs(
+      EXPORT_PROFILES[state.manifest.export.profile].maxAudioMs,
+      maxAudioMsOverride
+    );
+    const gifMinMs = this.resolveGifMinDurationMs(sticker, maxAudioMs);
     const prevAssoc = existingAudio ? state.manifest.associations[0] : undefined;
+    let assocStartMs = prevAssoc?.start_ms ?? 0;
+    let assocEndMs = prevAssoc?.end_ms ?? (existingAudio ? Math.min(existingAudio.duration_ms, maxAudioMs) : 0);
+    if (existingAudio) {
+      const targetMinWindow = Math.min(existingAudio.duration_ms, gifMinMs);
+      if (assocEndMs - assocStartMs < targetMinWindow) {
+        assocEndMs = Math.min(existingAudio.duration_ms, assocStartMs + targetMinWindow);
+        if (assocEndMs - assocStartMs < targetMinWindow) {
+          assocStartMs = Math.max(0, assocEndMs - targetMinWindow);
+        }
+      }
+    }
     const nextAssociations: Association[] = existingAudio
       ? [
           {
             id: prevAssoc?.id ?? generateAssetId("asc"),
             sticker_id: sticker.id,
             audio_id: existingAudio.id,
-            start_ms: prevAssoc?.start_ms ?? 0,
-            end_ms:
-              prevAssoc?.end_ms ??
-              Math.min(existingAudio.duration_ms, EXPORT_PROFILES[state.manifest.export.profile].maxAudioMs),
+            start_ms: assocStartMs,
+            end_ms: assocEndMs,
             volume: prevAssoc?.volume ?? 1,
             fade_in_ms: prevAssoc?.fade_in_ms ?? 0,
             fade_out_ms: prevAssoc?.fade_out_ms ?? 0
@@ -205,6 +220,13 @@ export class ProjectController {
       return profileMaxMs;
     }
     return Math.max(LIMITS.MIN_TRIM_DURATION_MS, Math.min(Math.round(overrideMaxMs), profileMaxMs));
+  }
+
+  private resolveGifMinDurationMs(sticker: StickerAsset | undefined, maxAudioMs: number): number {
+    if (sticker && sticker.format === "gif" && sticker.animated && (sticker.duration_ms ?? 0) > 0) {
+      return Math.max(LIMITS.MIN_TRIM_DURATION_MS, Math.min(Math.round(sticker.duration_ms!), maxAudioMs));
+    }
+    return LIMITS.MIN_TRIM_DURATION_MS;
   }
 
   public async importAudioFile(
@@ -328,7 +350,8 @@ export class ProjectController {
       EXPORT_PROFILES[state.manifest.export.profile].maxAudioMs,
       maxAudioMsOverride
     );
-    validateAudioTrim(updated, audio.duration_ms, maxAudioMs);
+    const gifMinMs = this.resolveGifMinDurationMs(state.manifest.stickers[0], maxAudioMs);
+    validateAudioTrim(updated, audio.duration_ms, maxAudioMs, gifMinMs);
 
     return {
       ...state,
@@ -558,8 +581,9 @@ export class ProjectController {
     }
 
     const maxAudioMs = this.resolveEffectiveMaxAudioMs(profile.maxAudioMs, maxAudioMsOverride);
-    validateAudioTrim(assoc, audio.duration_ms, maxAudioMs);
-    const expectedDurationMs = assoc.end_ms - assoc.start_ms;
+    const gifMinMs = this.resolveGifMinDurationMs(sticker, maxAudioMs);
+    validateAudioTrim(assoc, audio.duration_ms, maxAudioMs, gifMinMs);
+    const expectedTrimDurationMs = assoc.end_ms - assoc.start_ms;
 
     if (profileId === "sound-bundle") {
       const frame = await this.engine.renderSticker(stickerBytes, sticker.edit);
@@ -572,7 +596,7 @@ export class ProjectController {
         end_ms: assoc.end_ms,
         volume: assoc.volume
       });
-      if (Math.abs(pcm.durationMs - expectedDurationMs) > LIMITS.DURATION_TOLERANCE_MS) {
+      if (Math.abs(pcm.durationMs - expectedTrimDurationMs) > LIMITS.DURATION_TOLERANCE_MS) {
         throw new StikSoundError("encode-failed", "Trimmed audio duration outside 50 ms tolerance.");
       }
       const opusBytes = await this.engine.encodeOpus(pcm);
@@ -618,6 +642,8 @@ export class ProjectController {
       };
     }
 
+    const expectedDurationMs = Math.min(maxAudioMs, Math.max(expectedTrimDurationMs, gifMinMs));
+
     // video-mp4 or video-webm-alpha (primary 10-second video flow)
     const videoResult = await this.engine.renderVideo({
       stickerBytes,
@@ -627,6 +653,7 @@ export class ProjectController {
       stickerHeight: sticker.height,
       // Sound from the clip itself: render the same part of the clip. Other sound: clip from its start.
       videoOffsetMs: audio.source.type === "video-track" ? assoc.start_ms : 0,
+      minDurationMs: expectedDurationMs,
       audioBytes,
       audioFormat: audio.format,
       startMs: assoc.start_ms,

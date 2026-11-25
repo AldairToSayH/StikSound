@@ -45,7 +45,8 @@ export function slideTrimWindow(
 export function validateAudioTrim(
   edit: AudioTrimRange,
   totalDurationMs: number,
-  maxAudioMs: number = LIMITS.DEFAULT_VIDEO_MAX_AUDIO_MS
+  maxAudioMs: number = LIMITS.DEFAULT_VIDEO_MAX_AUDIO_MS,
+  minTrimMs: number = LIMITS.MIN_TRIM_DURATION_MS
 ): void {
   if (!Number.isInteger(edit.start_ms) || !Number.isInteger(edit.end_ms)) {
     throw new StikSoundError("trim-out-of-range", "Trim timestamps must be integer milliseconds.");
@@ -53,11 +54,15 @@ export function validateAudioTrim(
   if (edit.start_ms < 0 || edit.end_ms > totalDurationMs) {
     throw new StikSoundError("trim-out-of-range", "Trim bounds exceed audio duration.");
   }
+  const effectiveMinMs = Math.max(
+    LIMITS.MIN_TRIM_DURATION_MS,
+    Math.min(Math.round(totalDurationMs), Math.round(minTrimMs), maxAudioMs)
+  );
   const selectedMs = edit.end_ms - edit.start_ms;
-  if (selectedMs < LIMITS.MIN_TRIM_DURATION_MS || selectedMs > maxAudioMs) {
+  if (selectedMs < effectiveMinMs || selectedMs > maxAudioMs) {
     throw new StikSoundError(
       "trim-out-of-range",
-      `Selected duration ${selectedMs} ms must be within ${LIMITS.MIN_TRIM_DURATION_MS}..${maxAudioMs} ms.`
+      `Selected duration ${selectedMs} ms must be within ${effectiveMinMs}..${maxAudioMs} ms.`
     );
   }
   if (edit.fade_in_ms < 0 || edit.fade_out_ms < 0 || edit.fade_in_ms + edit.fade_out_ms > selectedMs) {

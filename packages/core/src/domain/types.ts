@@ -46,6 +46,7 @@ export interface StickerAsset {
   height: number;
   has_alpha: boolean;
   animated: boolean;
+  duration_ms?: number;
   edit: StickerEdit;
 }
 
@@ -165,6 +166,8 @@ export interface VideoRenderRequest {
   stickerHeight?: number;
   /** Video stickers: where in the clip the rendered segment starts. */
   videoOffsetMs?: number;
+  /** Minimum output duration (e.g. animated GIF loop length) in ms. */
+  minDurationMs?: number;
   audioBytes: Uint8Array;
   audioFormat: AudioFormat;
   startMs: number;

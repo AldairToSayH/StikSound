@@ -65,7 +65,7 @@ function makeFakeEngine(overrides: Partial<MediaEngine> = {}): MediaEngine {
         bytes: new Uint8Array([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70]),
         mimeType: req.container === "webm-alpha" ? "video/webm" : "video/mp4",
         extension: req.container === "webm-alpha" ? "webm" : "mp4",
-        durationMs: req.endMs - req.startMs,
+        durationMs: Math.max(req.endMs - req.startMs, req.minDurationMs ?? 0),
         hasAlpha: req.container === "webm-alpha"
       };
     },
@@ -263,5 +263,46 @@ describe("packages/core domain and use cases", () => {
     const mp4Ten = await ctrl.exportProject(project, "video-mp4", 10_000);
     expect(mp4Ten.fileName).toBe("switchcap-10s.mp4");
     expect(mp4Ten.durationMs).toBe(10_000);
+  });
+
+  it("enforces animated GIF minimum duration while keeping short 1.5s audio length when >= GIF loop", async () => {
+    const engine = makeFakeEngine({
+      async probeImage(bytes) {
+        const isShortGif = bytes[3] === 0x39;
+        return {
+          format: "gif",
+          width: 498,
+          height: 498,
+          has_alpha: true,
+          animated: true,
+          frame_count: 11,
+          duration_ms: isShortGif ? 550 : 2_000
+        };
+      },
+      async probeAudio(bytes) {
+        const durationMs = bytes.byteLength === 3 ? 1_500 : bytes.byteLength === 2 ? 800 : 10_000;
+        return { format: "mp3", duration_ms: durationMs, sample_rate: 44100, channels: 2 };
+      }
+    });
+    const ctrl = new ProjectController(engine);
+
+    // Case 1: 550ms GIF + 1500ms audio -> exports at 1500ms
+    let proj = createProject("ShortGif");
+    proj = await ctrl.importSticker(proj, new Uint8Array([0x47, 0x49, 0x46, 0x39]), "short.gif");
+    proj = await ctrl.importAudioFile(proj, new Uint8Array([1, 2, 3]), "1500ms.mp3");
+    const mp4Short = await ctrl.exportProject(proj, "video-mp4", 5_000);
+    expect(mp4Short.durationMs).toBe(1_500);
+
+    // Case 2: 2000ms GIF + 10000ms audio -> trimming below 2000ms throws trim-out-of-range
+    proj = await ctrl.importSticker(proj, new Uint8Array([0x47, 0x49, 0x46, 0x38]), "long.gif");
+    proj = await ctrl.importAudioFile(proj, new Uint8Array([1, 2, 3, 4]), "10000ms.mp3");
+    expect(() => ctrl.updateAudioEdit(proj, { start_ms: 0, end_ms: 1_500 }, 5_000)).toThrowError(
+      /trim-out-of-range/
+    );
+
+    // Case 3: 2000ms GIF + 800ms audio -> exports 2000ms video (minDurationMs = 2000)
+    proj = await ctrl.importAudioFile(proj, new Uint8Array([1, 2]), "800ms.mp3");
+    const mp4MinGif = await ctrl.exportProject(proj, "video-mp4", 5_000);
+    expect(mp4MinGif.durationMs).toBe(2_000);
   });
 });

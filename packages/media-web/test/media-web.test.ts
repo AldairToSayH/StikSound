@@ -6,7 +6,9 @@ import {
   cropAndFitSquareRgba,
   decodeGifFramesRgba,
   encodeWavBytes,
+  extractRawAudioSpecificConfig,
   prepareAnimatedGifFrames,
+  sanitizeMp4AudioChunkMeta,
   scheduleGifFramesForDuration,
   sniffImageHeader,
   trimPcmSamples
@@ -160,6 +162,27 @@ describe("packages/media-web", () => {
 
     const evilZip = zipSync({ "../outside.txt": new Uint8Array([1, 2, 3]) });
     await expect(engine.unzip(evilZip)).rejects.toMatchObject({ code: "package-invalid" });
+  });
+
+  it("extracts raw AudioSpecificConfig from Apple ES_Descriptor without double-wrapping MP4 esds", () => {
+    const appleEsDescriptor = Uint8Array.from(
+      Buffer.from("038080802200000004808080144014001800000000000000000005808080021188068080800102", "hex")
+    );
+    const extracted = extractRawAudioSpecificConfig(appleEsDescriptor);
+    expect(Array.from(extracted ?? [])).toEqual([0x11, 0x88]);
+
+    const rawAsc = new Uint8Array([0x11, 0x88]);
+    expect(Array.from(extractRawAudioSpecificConfig(rawAsc) ?? [])).toEqual([0x11, 0x88]);
+
+    const sanitized = sanitizeMp4AudioChunkMeta({
+      decoderConfig: {
+        codec: "mp4a.40.2",
+        sampleRate: 48000,
+        numberOfChannels: 1,
+        description: appleEsDescriptor
+      }
+    });
+    expect(Array.from(new Uint8Array(sanitized?.decoderConfig?.description as ArrayBuffer))).toEqual([0x11, 0x88]);
   });
 
   it("TC-018: reports unsupported-codec when WebCodecs is absent without writing files", async () => {

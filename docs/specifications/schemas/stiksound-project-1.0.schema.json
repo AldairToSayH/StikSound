@@ -84,6 +84,7 @@
         "height": { "type": "integer", "minimum": 1, "maximum": 8000 },
         "has_alpha": { "type": "boolean" },
         "animated": { "type": "boolean" },
+        "duration_ms": { "type": "integer", "minimum": 0, "maximum": 180000 },
         "edit": { "$ref": "#/$defs/stickerEdit" }
       }
     },

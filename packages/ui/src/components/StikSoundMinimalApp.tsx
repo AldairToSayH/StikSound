@@ -371,10 +371,14 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
     setStatusMessage(null);
   };
 
+  const minRequiredTrimMs =
+    sticker && sticker.format === "gif" && sticker.animated && (sticker.duration_ms ?? 0) > 0 && audio
+      ? Math.max(LIMITS.MIN_TRIM_DURATION_MS, Math.min(audio.duration_ms, sticker.duration_ms!, effectiveMaxAudioMs))
+      : LIMITS.MIN_TRIM_DURATION_MS;
   const trimValid =
     !profileDef.requiresAudio ||
     (assoc !== undefined &&
-      assoc.end_ms - assoc.start_ms >= LIMITS.MIN_TRIM_DURATION_MS &&
+      assoc.end_ms - assoc.start_ms >= minRequiredTrimMs &&
       assoc.end_ms - assoc.start_ms <= effectiveMaxAudioMs);
   const canExport = Boolean(sticker) && (!profileDef.requiresAudio || Boolean(audio)) && trimValid && !isBusy;
 

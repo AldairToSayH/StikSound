@@ -33,6 +33,66 @@ type ExtendedVideoEncoderConfig = VideoEncoderConfig & {
   avc?: { format: "avc" | "annexb" };
 };
 
+function toUint8Array(data: AllowSharedBufferSource): Uint8Array {
+  if (ArrayBuffer.isView(data)) {
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  }
+  return new Uint8Array(data);
+}
+
+/**
+ * Extracts raw MPEG-4 AudioSpecificConfig bytes from an EncodedAudioChunkMetadata description.
+ * On macOS/iOS, AudioEncoder passes a full ES_Descriptor (starting with tag 0x03) instead of raw
+ * AudioSpecificConfig; passing that straight to mp4-muxer double-wraps ES_Descriptor inside TAG(5).
+ */
+export function extractRawAudioSpecificConfig(
+  description: AllowSharedBufferSource | undefined
+): Uint8Array | undefined {
+  if (!description) return undefined;
+  const bytes = toUint8Array(description);
+  if (bytes.byteLength === 0) return undefined;
+  if (bytes[0] !== 0x03) return bytes;
+
+  for (let i = 0; i < bytes.byteLength - 2; i++) {
+    if (bytes[i] === 0x05) {
+      let j = i + 1;
+      let len = 0;
+      let count = 0;
+      while (j < bytes.byteLength && count < 4) {
+        const b = bytes[j++]!;
+        len = (len << 7) | (b & 0x7f);
+        count++;
+        if ((b & 0x80) === 0) break;
+      }
+      if (len > 0 && len <= 64 && j + len <= bytes.byteLength && bytes[j] !== 0x03) {
+        return bytes.slice(j, j + len);
+      }
+    }
+  }
+  return undefined;
+}
+
+export function sanitizeMp4AudioChunkMeta(
+  meta?: EncodedAudioChunkMetadata
+): EncodedAudioChunkMetadata | undefined {
+  if (!meta?.decoderConfig) return meta;
+  const rawAsc = extractRawAudioSpecificConfig(meta.decoderConfig.description);
+  if (rawAsc !== undefined) {
+    return {
+      ...meta,
+      decoderConfig: {
+        ...meta.decoderConfig,
+        description: rawAsc
+      }
+    };
+  }
+  const { description: _omitted, ...restConfig } = meta.decoderConfig;
+  return {
+    ...meta,
+    decoderConfig: restConfig
+  };
+}
+
 /**
  * Decodes an animated GIF into cropped 1:1 RGBA frames (composited onto matte
  * for non-alpha exports) without requiring DOM/ImageDecoder support.
@@ -268,7 +328,8 @@ export class WebMediaEngine implements MediaEngine {
   }
 
   public async renderVideo(request: VideoRenderRequest): Promise<VideoRenderResult> {
-    const durationMs = request.endMs - request.startMs;
+    const audioWindowMs = request.endMs - request.startMs;
+    const durationMs = Math.max(audioWindowMs, Math.round(request.minDurationMs ?? 0));
 
     // 1) Primary zero-dependency path: WebCodecs + pure-TS mp4-muxer / webm-muxer
     if (
@@ -394,6 +455,20 @@ export class WebMediaEngine implements MediaEngine {
     );
   }
 
+  private padPcmToDuration(pcm: PcmMono48k, targetDurationMs: number): PcmMono48k {
+    if (targetDurationMs <= pcm.durationMs) {
+      return pcm;
+    }
+    const totalSamples = Math.max(pcm.samples.length, Math.round((targetDurationMs / 1000) * pcm.sampleRate));
+    const padded = new Float32Array(totalSamples);
+    padded.set(pcm.samples, 0);
+    return {
+      ...pcm,
+      samples: padded,
+      durationMs: targetDurationMs
+    };
+  }
+
   private async renderVideoWithWebCodecs(
     request: VideoRenderRequest,
     durationMs: number,
@@ -401,11 +476,12 @@ export class WebMediaEngine implements MediaEngine {
     audioConfig: AudioEncoderConfig,
     outputSize: number
   ): Promise<VideoRenderResult> {
-    const pcm = await this.renderAudio(request.audioBytes, {
+    const rawPcm = await this.renderAudio(request.audioBytes, {
       start_ms: request.startMs,
       end_ms: request.endMs,
       volume: request.volume
     });
+    const pcm = this.padPcmToDuration(rawPcm, durationMs);
 
     const isWebm = request.container === "webm-alpha";
     const isClip = isVideoFormat(request.stickerFormat);
@@ -449,7 +525,7 @@ export class WebMediaEngine implements MediaEngine {
 
     const audioEncoder = new AudioEncoder({
       output: (chunk, meta) => {
-        mp4Muxer?.addAudioChunk(chunk, meta);
+        mp4Muxer?.addAudioChunk(chunk, sanitizeMp4AudioChunkMeta(meta));
         webmMuxer?.addAudioChunk(chunk, meta);
       },
       error: (err) => {
@@ -471,7 +547,7 @@ export class WebMediaEngine implements MediaEngine {
       vf.close();
     }
 
-    const chunkSamples = 4800; // 100ms chunks at 48 kHz for broad AAC/Opus encoder compatibility
+    const chunkSamples = isWebm ? 4800 : 4096; // 4096 = 4 * 1024 AAC frames; 4800 = 5 * 960 Opus frames
     for (let offset = 0; offset < pcm.samples.length; offset += chunkSamples) {
       const slice = pcm.samples.subarray(offset, Math.min(pcm.samples.length, offset + chunkSamples));
       const audioData = new AudioData({
@@ -550,167 +626,170 @@ export class WebMediaEngine implements MediaEngine {
     request: VideoRenderRequest,
     durationMs: number
   ): Promise<VideoRenderResult> {
-    const pcm = await this.renderAudio(request.audioBytes, {
-      start_ms: request.startMs,
-      end_ms: request.endMs,
-      volume: request.volume
-    });
-
-    const size = await this.stickerSize(request);
-    const crop = computeSquareCrop(size.width, size.height, request.cropX ?? 0.5, request.cropY ?? 0.5);
-    const canvas = document.createElement("canvas");
-    canvas.width = crop.outputSize;
-    canvas.height = crop.outputSize;
-    const ctx = canvas.getContext("2d");
-    if (!ctx || typeof canvas.captureStream !== "function") {
-      throw new StikSoundError("unsupported-codec", "Canvas captureStream is not available.");
-    }
-
-    const isWebm = request.container === "webm-alpha";
-    const isClip = isVideoFormat(request.stickerFormat);
-    let clip: OpenedVideo | null = null;
-    let gifImageDatas: ImageData[] | null = null;
-    let gifCumEndMs: number[] = [];
-    let gifCycleMs = 1;
-    let imgUrl = "";
-    let imgEl: HTMLImageElement | null = null;
-
-    if (isClip) {
-      // Real-time path: the clip plays (muted) into the canvas while MediaRecorder captures it.
-      clip = await openVideo(request.stickerBytes, request.stickerFormat as VideoFormat);
-      clip.el.loop = true;
-      await seekVideo(clip.el, (request.videoOffsetMs ?? 0) / 1000);
-    } else {
-      if (request.animated && request.stickerFormat === "gif") {
-        try {
-          const decodedGif = prepareAnimatedGifFrames(request);
-          if (decodedGif.length > 0) {
-            gifImageDatas = decodedGif.map(
-              (f) => new ImageData(new Uint8ClampedArray(f.rgba), f.width, f.height)
-            );
-            let acc = 0;
-            gifCumEndMs = decodedGif.map((f) => {
-              acc += f.delayMs;
-              return acc;
-            });
-            gifCycleMs = Math.max(1, acc);
-          }
-        } catch {
-          gifImageDatas = null;
-        }
-      }
-
-      if (!gifImageDatas) {
-        const imgBlob = new Blob([request.stickerBytes.slice().buffer], { type: `image/${request.stickerFormat}` });
-        imgUrl = URL.createObjectURL(imgBlob);
-        imgEl = new Image();
-        imgEl.src = imgUrl;
-        await new Promise<void>((resolve, reject) => {
-          imgEl!.onload = () => resolve();
-          imgEl!.onerror = () => reject(new StikSoundError("unsupported-image", "Image load failed."));
-        });
-      }
-    }
-
     const audioCtx = new AudioContext({ sampleRate: 48000 });
-    // Mobile Safari starts contexts "suspended"; a suspended context records silence.
-    await audioCtx.resume().catch(() => undefined);
-    const audioBuffer = audioCtx.createBuffer(1, pcm.samples.length, 48000);
-    audioBuffer.copyToChannel(pcm.samples.slice(), 0);
-    const source = audioCtx.createBufferSource();
-    source.buffer = audioBuffer;
-    const dest = audioCtx.createMediaStreamDestination();
-    source.connect(dest);
+    // Mobile Safari starts contexts "suspended"; start resuming immediately before any await.
+    const resumePromise = audioCtx.resume().catch(() => undefined);
 
-    const videoStream = canvas.captureStream(24);
-    const videoTrack = videoStream.getVideoTracks()[0] as { requestFrame?: () => void } | undefined;
-    const startedAt = performance.now();
+    let clip: OpenedVideo | null = null;
+    let imgUrl = "";
 
-    const drawSticker = () => {
-      if (clip) {
-        drawCroppedFrame(ctx, clip, request.cropX ?? 0.5, request.cropY ?? 0.5, isWebm ? null : request.matteColor);
-      } else if (gifImageDatas && gifImageDatas.length > 0) {
-        const elapsed = (performance.now() - startedAt) % gifCycleMs;
-        let idx = 0;
-        while (idx < gifCumEndMs.length - 1 && elapsed >= gifCumEndMs[idx]!) {
-          idx++;
-        }
-        ctx.putImageData(gifImageDatas[idx]!, 0, 0);
-      } else if (imgEl) {
-        if (isWebm) {
-          ctx.clearRect(0, 0, crop.outputSize, crop.outputSize);
-        } else {
-          ctx.fillStyle = request.matteColor;
-          ctx.fillRect(0, 0, crop.outputSize, crop.outputSize);
-        }
-        ctx.drawImage(
-          imgEl,
-          crop.srcX,
-          crop.srcY,
-          crop.cropSide,
-          crop.cropSide,
-          0,
-          0,
-          crop.outputSize,
-          crop.outputSize
-        );
+    try {
+      const rawPcm = await this.renderAudio(request.audioBytes, {
+        start_ms: request.startMs,
+        end_ms: request.endMs,
+        volume: request.volume
+      });
+      const pcm = this.padPcmToDuration(rawPcm, durationMs);
+
+      const size = await this.stickerSize(request);
+      const crop = computeSquareCrop(size.width, size.height, request.cropX ?? 0.5, request.cropY ?? 0.5);
+      const canvas = document.createElement("canvas");
+      canvas.width = crop.outputSize;
+      canvas.height = crop.outputSize;
+      const ctx = canvas.getContext("2d");
+      if (!ctx || typeof canvas.captureStream !== "function") {
+        throw new StikSoundError("unsupported-codec", "Canvas captureStream is not available.");
       }
-      videoTrack?.requestFrame?.();
-    };
-    drawSticker();
 
-    const combined = new MediaStream([
-      ...videoStream.getVideoTracks(),
-      ...dest.stream.getAudioTracks()
-    ]);
+      const isWebm = request.container === "webm-alpha";
+      const isClip = isVideoFormat(request.stickerFormat);
+      let gifImageDatas: ImageData[] | null = null;
+      let gifCumEndMs: number[] = [];
+      let gifCycleMs = 1;
+      let imgEl: HTMLImageElement | null = null;
 
-    const preferredMime = isWebm
-      ? ["video/webm;codecs=vp9,opus", "video/webm"].find((m) => MediaRecorder.isTypeSupported(m))
-      : ["video/mp4", "video/webm;codecs=vp8,opus", "video/webm"].find((m) => MediaRecorder.isTypeSupported(m));
-    if (!preferredMime) {
+      if (isClip) {
+        // Real-time path: the clip plays (muted) into the canvas while MediaRecorder captures it.
+        clip = await openVideo(request.stickerBytes, request.stickerFormat as VideoFormat);
+        clip.el.loop = true;
+        await seekVideo(clip.el, (request.videoOffsetMs ?? 0) / 1000);
+      } else {
+        if (request.animated && request.stickerFormat === "gif") {
+          try {
+            const decodedGif = prepareAnimatedGifFrames(request);
+            if (decodedGif.length > 0) {
+              gifImageDatas = decodedGif.map(
+                (f) => new ImageData(new Uint8ClampedArray(f.rgba), f.width, f.height)
+              );
+              let acc = 0;
+              gifCumEndMs = decodedGif.map((f) => {
+                acc += f.delayMs;
+                return acc;
+              });
+              gifCycleMs = Math.max(1, acc);
+            }
+          } catch {
+            gifImageDatas = null;
+          }
+        }
+
+        if (!gifImageDatas) {
+          const imgBlob = new Blob([request.stickerBytes.slice().buffer], { type: `image/${request.stickerFormat}` });
+          imgUrl = URL.createObjectURL(imgBlob);
+          imgEl = new Image();
+          imgEl.src = imgUrl;
+          await new Promise<void>((resolve, reject) => {
+            imgEl!.onload = () => resolve();
+            imgEl!.onerror = () => reject(new StikSoundError("unsupported-image", "Image load failed."));
+          });
+        }
+      }
+
+      await resumePromise;
+      const audioBuffer = audioCtx.createBuffer(1, pcm.samples.length, 48000);
+      audioBuffer.copyToChannel(pcm.samples.slice(), 0);
+      const source = audioCtx.createBufferSource();
+      source.buffer = audioBuffer;
+      const dest = audioCtx.createMediaStreamDestination();
+      source.connect(dest);
+
+      const videoStream = canvas.captureStream(24);
+      const videoTrack = videoStream.getVideoTracks()[0] as { requestFrame?: () => void } | undefined;
+      const startedAt = performance.now();
+
+      const drawSticker = () => {
+        if (clip) {
+          drawCroppedFrame(ctx, clip, request.cropX ?? 0.5, request.cropY ?? 0.5, isWebm ? null : request.matteColor);
+        } else if (gifImageDatas && gifImageDatas.length > 0) {
+          const elapsed = (performance.now() - startedAt) % gifCycleMs;
+          let idx = 0;
+          while (idx < gifCumEndMs.length - 1 && elapsed >= gifCumEndMs[idx]!) {
+            idx++;
+          }
+          ctx.putImageData(gifImageDatas[idx]!, 0, 0);
+        } else if (imgEl) {
+          if (isWebm) {
+            ctx.clearRect(0, 0, crop.outputSize, crop.outputSize);
+          } else {
+            ctx.fillStyle = request.matteColor;
+            ctx.fillRect(0, 0, crop.outputSize, crop.outputSize);
+          }
+          ctx.drawImage(
+            imgEl,
+            crop.srcX,
+            crop.srcY,
+            crop.cropSide,
+            crop.cropSide,
+            0,
+            0,
+            crop.outputSize,
+            crop.outputSize
+          );
+        }
+        videoTrack?.requestFrame?.();
+      };
+      drawSticker();
+
+      const combined = new MediaStream([
+        ...videoStream.getVideoTracks(),
+        ...dest.stream.getAudioTracks()
+      ]);
+
+      const preferredMime = isWebm
+        ? ["video/webm;codecs=vp9,opus", "video/webm"].find((m) => MediaRecorder.isTypeSupported(m))
+        : ["video/mp4", "video/webm;codecs=vp8,opus", "video/webm"].find((m) => MediaRecorder.isTypeSupported(m));
+      if (!preferredMime) {
+        throw new StikSoundError("unsupported-codec", "No supported MediaRecorder video mime type.");
+      }
+
+      const chunks: BlobPart[] = [];
+      const recorder = new MediaRecorder(combined, { mimeType: preferredMime });
+      recorder.ondataavailable = (ev) => {
+        if (ev.data.size > 0) chunks.push(ev.data);
+      };
+
+      const done = new Promise<Uint8Array>((resolve, reject) => {
+        recorder.onstop = async () => {
+          const outBlob = new Blob(chunks, { type: preferredMime });
+          resolve(new Uint8Array(await outBlob.arrayBuffer()));
+        };
+        recorder.onerror = () => reject(new StikSoundError("encode-failed", "MediaRecorder failed."));
+      });
+
+      const intervalId = window.setInterval(drawSticker, 33);
+      recorder.start();
+      source.start();
+      if (clip) await clip.el.play().catch(() => undefined);
+
+      await new Promise((r) => setTimeout(r, durationMs));
+      window.clearInterval(intervalId);
+      source.stop();
+      if (recorder.state !== "inactive") recorder.stop();
+
+      const bytes = await done;
+      const outIsMp4 = preferredMime.includes("mp4");
+      return {
+        bytes,
+        mimeType: outIsMp4 ? "video/mp4" : "video/webm",
+        extension: outIsMp4 ? "mp4" : "webm",
+        durationMs: pcm.durationMs,
+        hasAlpha: !outIsMp4 && isWebm
+      };
+    } finally {
       if (imgUrl) URL.revokeObjectURL(imgUrl);
       clip?.dispose();
       await audioCtx.close().catch(() => undefined);
-      throw new StikSoundError("unsupported-codec", "No supported MediaRecorder video mime type.");
     }
-
-    const chunks: BlobPart[] = [];
-    const recorder = new MediaRecorder(combined, { mimeType: preferredMime });
-    recorder.ondataavailable = (ev) => {
-      if (ev.data.size > 0) chunks.push(ev.data);
-    };
-
-    const done = new Promise<Uint8Array>((resolve, reject) => {
-      recorder.onstop = async () => {
-        const outBlob = new Blob(chunks, { type: preferredMime });
-        resolve(new Uint8Array(await outBlob.arrayBuffer()));
-      };
-      recorder.onerror = () => reject(new StikSoundError("encode-failed", "MediaRecorder failed."));
-    });
-
-    const intervalId = window.setInterval(drawSticker, 33);
-    recorder.start();
-    source.start();
-    if (clip) await clip.el.play().catch(() => undefined);
-
-    await new Promise((r) => setTimeout(r, durationMs));
-    window.clearInterval(intervalId);
-    source.stop();
-    if (recorder.state !== "inactive") recorder.stop();
-
-    const bytes = await done;
-    if (imgUrl) URL.revokeObjectURL(imgUrl);
-    clip?.dispose();
-    await audioCtx.close().catch(() => undefined);
-
-    const outIsMp4 = preferredMime.includes("mp4");
-    return {
-      bytes,
-      mimeType: outIsMp4 ? "video/mp4" : "video/webm",
-      extension: outIsMp4 ? "mp4" : "webm",
-      durationMs: pcm.durationMs,
-      hasAlpha: !outIsMp4 && isWebm
-    };
   }
 
   private async decodeVideoFrames(
