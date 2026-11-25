@@ -42,5 +42,6 @@
   "exportSuccessVideo": "Video downloaded. You can now upload it to WhatsApp as a sound sticker.",
   "exportSuccessBundle": "Bundle saved. Note: it contains image and sound as separate files; WhatsApp may treat the image as a normal sticker.",
   "close": "Close",
-  "shareReadyToast": "Video ready. Tap \"Share\" to send it to WhatsApp or save it to Photos."
+  "shareReadyToast": "Video ready. Tap \"Share\" to send it to WhatsApp or save it to Photos.",
+  "videoSilentToast": "This video has no sound (or it could not be read). You can pick a sound with the audio button."
 }

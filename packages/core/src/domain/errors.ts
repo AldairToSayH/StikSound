@@ -1,5 +1,6 @@
 export type StikSoundErrorCode =
   | "unsupported-image"
+  | "unsupported-video"
   | "unsupported-audio"
   | "unsupported-codec"
   | "encode-failed"
@@ -59,13 +60,23 @@ export const ERROR_CATALOG: Record<StikSoundErrorCode, Record<LocaleCode, Locali
       action: "Try switching the export format in ⋯ or retry with another input."
     }
   },
+  "unsupported-video": {
+    es: {
+      title: "Este video no se pudo abrir aquí.",
+      action: "Prueba con un video MP4 o uno grabado con la cámara del teléfono."
+    },
+    en: {
+      title: "This video could not be opened here.",
+      action: "Try an MP4 video or one recorded with your phone camera."
+    }
+  },
   "file-too-large": {
     es: {
-      title: "El archivo supera el límite permitido (20 MB imagen / 25 MB o 3 min audio).",
+      title: "El archivo supera el límite permitido (20 MB imagen / 100 MB o 60 s video / 25 MB o 3 min audio).",
       action: "Usa un archivo más liviano o recórtalo previamente."
     },
     en: {
-      title: "File exceeds the allowed size or duration limit (20 MB image / 25 MB or 3 min audio).",
+      title: "File exceeds the allowed size or duration limit (20 MB image / 100 MB or 60 s video / 25 MB or 3 min audio).",
       action: "Use a smaller file or trim it externally first."
     }
   },

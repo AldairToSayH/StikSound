@@ -6,7 +6,9 @@ import {
   computeSquareCrop,
   createProject,
   formatError,
+  isVideoFormat,
   resetProject,
+  stickerMimeType,
   type ExportArtifact,
   type ExportProfileId,
   type LocaleCode,
@@ -37,7 +39,12 @@ export interface PlatformOptions {
   transparentVideo?: boolean;
   /** Show the MyInstants URL field. Plain web pages are blocked by CORS. Default true. */
   myInstantsUrl?: boolean;
+  /** Offer short video clips (MP4/MOV/WebM) in the sticker picker. Needs the web media engine. Default false. */
+  videoStickers?: boolean;
 }
+
+const IMAGE_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,.png,.jpg,.jpeg,.webp,.gif";
+const VIDEO_ACCEPT = "video/mp4,video/quicktime,video/webm,.mp4,.mov,.m4v,.webm";
 
 export type UiLabels = typeof esLocale;
 
@@ -81,6 +88,7 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
 }) => {
   const allowTransparent = platform?.transparentVideo !== false;
   const allowMyInstantsUrl = platform?.myInstantsUrl !== false;
+  const allowVideoStickers = platform?.videoStickers === true;
   const controller = useMemo(() => new ProjectController(engine, providers), [engine, providers]);
   const [locale, setLocale] = useState<LocaleCode>(initialLocale);
   const [project, setProject] = useState<ProjectWorkspaceState>(() => initialState ?? createProject());
@@ -98,6 +106,7 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
   const stickerFileInputRef = useRef<HTMLInputElement>(null);
   const projectZipInputRef = useRef<HTMLInputElement>(null);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
+  const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const playbackTimerRef = useRef<number | null>(null);
 
   const copy: UiLabels = useMemo(
@@ -112,14 +121,34 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
   const effectiveMaxAudioMs = profileDef.requiresAudio
     ? Math.min(maxDurationMs, profileDef.maxAudioMs)
     : maxDurationMs;
+  const stickerIsVideo = Boolean(sticker) && isVideoFormat(sticker!.format);
+  // Sound taken from the clip itself: the trim window also picks which part of the clip is used.
+  const audioFromVideo = audio?.source.type === "video-track";
+  const videoOffsetMs = stickerIsVideo && audioFromVideo ? assoc?.start_ms ?? 0 : 0;
 
+  const stickerFile = sticker?.file;
+  const stickerFormat = sticker?.format;
   const stickerPreviewUrl = useMemo(() => {
-    if (!sticker) return null;
-    const bytes = project.assets.get(sticker.file);
+    if (!stickerFile || !stickerFormat) return null;
+    const bytes = project.assets.get(stickerFile);
     if (!bytes || typeof URL.createObjectURL !== "function") return null;
-    const blob = new Blob([bytes.slice().buffer], { type: `image/${sticker.format}` });
+    const blob = new Blob([bytes.slice().buffer], { type: stickerMimeType(stickerFormat) });
     return URL.createObjectURL(blob);
-  }, [sticker, project.assets]);
+  }, [stickerFile, stickerFormat, project.assets]);
+
+  // Keep the looping preview clip on the chosen 5 s window.
+  useEffect(() => {
+    const el = previewVideoRef.current;
+    if (!el || !stickerIsVideo) return;
+    const startSec = videoOffsetMs / 1000;
+    const endSec = startSec + Math.max(0.1, ((assoc?.end_ms ?? 0) - (assoc?.start_ms ?? 0)) / 1000 || 5);
+    const onTime = () => {
+      if (el.currentTime < startSec - 0.05 || el.currentTime >= endSec) el.currentTime = startSec;
+    };
+    el.currentTime = startSec;
+    el.addEventListener("timeupdate", onTime);
+    return () => el.removeEventListener("timeupdate", onTime);
+  }, [stickerIsVideo, videoOffsetMs, assoc?.start_ms, assoc?.end_ms, stickerPreviewUrl]);
 
   const readyVideoUrl = useMemo(() => {
     if (!readyArtifact || typeof URL.createObjectURL !== "function") return null;
@@ -175,15 +204,20 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
       setReadyArtifact(null);
       setDownloadMenuOpen(false);
       try {
-        const next = await controller.importSticker(project, bytes, name);
+        const next = await controller.importSticker(project, bytes, name, effectiveMaxAudioMs);
         setProject(next);
+        const nextAudio = next.manifest.audios[0];
+        const peaks = next.waveformPeaks;
+        if (nextAudio?.source.type === "video-track" && peaks && peaks.maxs.every((v) => v === 0)) {
+          setStatusMessage(copy.videoSilentToast);
+        }
       } catch (err) {
         handleError(err);
       } finally {
         setIsBusy(false);
       }
     },
-    [controller, project, handleError]
+    [controller, project, effectiveMaxAudioMs, handleError, copy]
   );
 
   const importAudioBytes = useCallback(
@@ -283,6 +317,11 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
     el.currentTime = assoc.start_ms / 1000;
     audioElRef.current = el;
     setIsPlaying(true);
+    // Restart the (muted) preview clip so picture and sound line up.
+    if (previewVideoRef.current) {
+      previewVideoRef.current.currentTime = videoOffsetMs / 1000;
+      previewVideoRef.current.play().catch(() => undefined);
+    }
 
     const playDur = Math.max(100, assoc.end_ms - assoc.start_ms);
     playbackTimerRef.current = window.setTimeout(() => {
@@ -294,7 +333,7 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
       URL.revokeObjectURL(url);
       stopPlayback();
     });
-  }, [isPlaying, stopPlayback, audio, assoc, project.assets]);
+  }, [isPlaying, stopPlayback, audio, assoc, project.assets, videoOffsetMs]);
 
   const handleResetAll = () => {
     stopPlayback();
@@ -629,7 +668,7 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
       <input
         ref={stickerFileInputRef}
         type="file"
-        accept="image/png,image/jpeg,image/webp,image/gif,.png,.jpg,.jpeg,.webp,.gif"
+        accept={allowVideoStickers ? `${IMAGE_ACCEPT},${VIDEO_ACCEPT}` : IMAGE_ACCEPT}
         style={{ display: "none" }}
         onChange={async (e) => {
           const f = e.target.files?.[0];
@@ -727,7 +766,31 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
             </div>
           ) : (
             <div className="stik-preview-box">
-              {stickerPreviewUrl ? (
+              {stickerPreviewUrl && stickerIsVideo ? (
+                <video
+                  ref={(el) => {
+                    previewVideoRef.current = el;
+                    // React does not write the muted attribute; iOS needs it to autoplay inline.
+                    if (el) {
+                      el.muted = true;
+                      el.defaultMuted = true;
+                      el.setAttribute("muted", "");
+                    }
+                  }}
+                  data-testid="sticker-preview-video"
+                  src={stickerPreviewUrl}
+                  className="stik-sticker-img"
+                  muted
+                  autoPlay
+                  loop
+                  playsInline
+                  aria-label={sticker.source_name}
+                  style={{
+                    objectFit: "cover",
+                    objectPosition: `${Math.round(cropX * 100)}% ${Math.round(cropY * 100)}%`
+                  }}
+                />
+              ) : stickerPreviewUrl ? (
                 <img
                   src={stickerPreviewUrl}
                   alt={sticker.source_name}

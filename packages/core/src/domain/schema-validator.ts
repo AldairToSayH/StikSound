@@ -4,7 +4,7 @@ import type { ProjectManifest } from "./types";
 
 const ASSET_PATH_PATTERN = /^assets\/[A-Za-z0-9._-]+$/;
 const HEX_COLOR_PATTERN = /^#[0-9A-Fa-f]{6}$/;
-const ALLOWED_IMAGE_FORMATS = new Set(["png", "jpeg", "webp", "gif"]);
+const ALLOWED_IMAGE_FORMATS = new Set(["png", "jpeg", "webp", "gif", "mp4", "mov", "webm"]);
 const ALLOWED_AUDIO_FORMATS = new Set(["mp3", "wav", "ogg", "m4a", "aac"]);
 const ALLOWED_PROFILES = new Set([
   "video-mp4",
@@ -205,7 +205,7 @@ export function validateProjectManifest(raw: unknown): ProjectManifest {
       throw new StikSoundError("package-invalid", "Missing audio.source.");
     }
     assertAllowedKeys(a.source, ["type", "page_url", "media_url", "title"], "audioSource");
-    if (a.source.type !== "local" && a.source.type !== "myinstants") {
+    if (a.source.type !== "local" && a.source.type !== "myinstants" && a.source.type !== "video-track") {
       throw new StikSoundError("package-invalid", "Invalid audio.source.type.");
     }
     if (a.source.type === "myinstants" && typeof a.source.media_url !== "string") {

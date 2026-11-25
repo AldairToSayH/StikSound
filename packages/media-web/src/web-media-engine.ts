@@ -3,6 +3,7 @@ import {
   StikSoundError,
   assertSafeZipEntryPath,
   computeSquareCrop,
+  isVideoFormat,
   type AudioProbeInfo,
   type ImageProbeInfo,
   type MediaEngine,
@@ -10,6 +11,7 @@ import {
   type PeakBuckets,
   type RgbaFrame512,
   type StickerEdit,
+  type VideoFormat,
   type VideoRenderRequest,
   type VideoRenderResult,
   type ZipEntryInput
@@ -20,14 +22,91 @@ import { Muxer as WebmMuxer, ArrayBufferTarget as WebmTarget } from "webm-muxer"
 import { computePeaksFromFloat32, decodeWavToMonoFloat32, encodeWavBytes, trimPcmSamples } from "./audio-utils";
 import { scheduleGifFramesForDuration } from "./gif-scheduler";
 import { compositeRgbaOnMatte, cropAndFitSquareRgba } from "./image-utils";
-import { sniffAudioContainer, sniffImageHeader } from "./sniffers";
+import { sniffAudioContainer, sniffImageHeader, sniffVideoContainer } from "./sniffers";
+import { clipTimeSec, drawCroppedFrame, openVideo, seekVideo, type OpenedVideo } from "./video-utils";
+
+/** Frame rate used when a video clip is the sticker source. Each frame costs one seek. */
+const CLIP_FPS = 15;
 
 export class WebMediaEngine implements MediaEngine {
   public async probeImage(bytes: Uint8Array): Promise<ImageProbeInfo> {
+    const videoFormat = sniffVideoContainer(bytes);
+    if (videoFormat) {
+      const video = await openVideo(bytes, videoFormat);
+      video.dispose();
+      return {
+        format: videoFormat,
+        width: video.width,
+        height: video.height,
+        has_alpha: false,
+        animated: true,
+        frame_count: Math.max(1, Math.round((video.durationMs / 1000) * CLIP_FPS)),
+        duration_ms: video.durationMs
+      };
+    }
     return sniffImageHeader(bytes);
   }
 
+  /** Video stickers: the clip's sound as mono WAV, or silence of the clip's length. */
+  public async extractAudioTrack(
+    videoBytes: Uint8Array,
+    durationMs: number
+  ): Promise<{ wavBytes: Uint8Array; silent: boolean }> {
+    try {
+      const { samples, sampleRate } = await this.decodeToMonoSamples(videoBytes);
+      const totalMs = Math.floor((samples.length / sampleRate) * 1000);
+      if (totalMs >= LIMITS.MIN_AUDIO_DURATION_MS) {
+        const pcm = trimPcmSamples(samples, sampleRate, 0, totalMs, 1, Number.MAX_SAFE_INTEGER);
+        return { wavBytes: encodeWavBytes(pcm), silent: false };
+      }
+    } catch {
+      // No sound track, or this browser cannot read it: fall through to silence.
+    }
+    const ms = Math.max(LIMITS.MIN_AUDIO_DURATION_MS, Math.round(durationMs));
+    const silence: PcmMono48k = {
+      sampleRate: 48000,
+      channels: 1,
+      samples: new Float32Array(Math.round(ms * 48)),
+      durationMs: ms
+    };
+    return { wavBytes: encodeWavBytes(silence), silent: true };
+  }
+
+  /** Width/height of the sticker source: sniffed for images, from the request (or a probe) for clips. */
+  private async stickerSize(request: VideoRenderRequest): Promise<{ width: number; height: number }> {
+    if (!isVideoFormat(request.stickerFormat)) {
+      const info = sniffImageHeader(request.stickerBytes);
+      return { width: info.width, height: info.height };
+    }
+    if (request.stickerWidth && request.stickerHeight) {
+      return { width: request.stickerWidth, height: request.stickerHeight };
+    }
+    const video = await openVideo(request.stickerBytes, request.stickerFormat);
+    video.dispose();
+    return { width: video.width, height: video.height };
+  }
+
   public async renderSticker(bytes: Uint8Array, edit: StickerEdit): Promise<RgbaFrame512> {
+    const videoFormat = sniffVideoContainer(bytes);
+    if (videoFormat) {
+      // Static uses (WebP in the sound bundle) take the clip's first frame.
+      const video = await openVideo(bytes, videoFormat);
+      try {
+        await seekVideo(video.el, 0);
+        const size = computeSquareCrop(video.width, video.height, edit.crop_x ?? 0.5, edit.crop_y ?? 0.5).outputSize;
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new StikSoundError("encode-failed", "2D context unavailable.");
+        drawCroppedFrame(ctx, video, edit.crop_x ?? 0.5, edit.crop_y ?? 0.5, null);
+        const imageData = ctx.getImageData(0, 0, size, size);
+        return { width: size, height: size, data: new Uint8Array(imageData.data) };
+      } finally {
+        video.dispose();
+      }
+    }
+
     const info = sniffImageHeader(bytes);
     const crop = computeSquareCrop(info.width, info.height, edit.crop_x ?? 0.5, edit.crop_y ?? 0.5);
 
@@ -174,8 +253,8 @@ export class WebMediaEngine implements MediaEngine {
       const videoCodec = isWebm ? "vp09.00.10.08" : "avc1.42001E";
       const audioCodec = isWebm ? "opus" : "mp4a.40.2";
 
-      const imgInfo = sniffImageHeader(request.stickerBytes);
-      const crop = computeSquareCrop(imgInfo.width, imgInfo.height, request.cropX ?? 0.5, request.cropY ?? 0.5);
+      const size = await this.stickerSize(request);
+      const crop = computeSquareCrop(size.width, size.height, request.cropX ?? 0.5, request.cropY ?? 0.5);
 
       try {
         const vSupport = await VideoEncoder.isConfigSupported({
@@ -224,7 +303,9 @@ export class WebMediaEngine implements MediaEngine {
     });
 
     const isWebm = request.container === "webm-alpha";
-    const framesToRender = await this.decodeVideoFrames(request, durationMs, outputSize);
+    const isClip = isVideoFormat(request.stickerFormat);
+    // Image/GIF frames are prepared up front; clip frames are drawn and encoded one at a time.
+    const framesToRender = isClip ? [] : await this.decodeVideoFrames(request, durationMs, outputSize);
 
     const mp4Target = isWebm ? null : new Mp4Target();
     const webmTarget = isWebm ? new WebmTarget() : null;
@@ -274,6 +355,9 @@ export class WebMediaEngine implements MediaEngine {
       bitrate: isWebm ? 64_000 : 128_000
     });
 
+    if (isClip) {
+      await this.encodeClipFrames(request, durationMs, outputSize, videoEncoder);
+    }
     for (let i = 0; i < framesToRender.length; i++) {
       const f = framesToRender[i]!;
       const vf = new VideoFrame(f.canvas, {
@@ -321,6 +405,37 @@ export class WebMediaEngine implements MediaEngine {
     };
   }
 
+  /** Seek through the clip at CLIP_FPS, draw each 1:1 crop and hand it straight to the encoder. */
+  private async encodeClipFrames(
+    request: VideoRenderRequest,
+    durationMs: number,
+    outputSize: number,
+    encoder: VideoEncoder
+  ): Promise<void> {
+    const video = await openVideo(request.stickerBytes, request.stickerFormat as VideoFormat);
+    try {
+      const canvas = new OffscreenCanvas(outputSize, outputSize);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new StikSoundError("encode-failed", "2D context unavailable.");
+      const matte = request.container === "webm-alpha" ? null : request.matteColor;
+      const stepUs = Math.round(1_000_000 / CLIP_FPS);
+      const totalUs = durationMs * 1000;
+      let index = 0;
+      for (let t = 0; t < totalUs; t += stepUs, index++) {
+        await seekVideo(video.el, clipTimeSec(request.videoOffsetMs ?? 0, t / 1000, video.durationMs));
+        drawCroppedFrame(ctx, video, request.cropX ?? 0.5, request.cropY ?? 0.5, matte);
+        const frame = new VideoFrame(canvas, { timestamp: t, duration: Math.min(stepUs, totalUs - t) });
+        encoder.encode(frame, { keyFrame: index % 24 === 0 });
+        frame.close();
+        while (encoder.encodeQueueSize > 8) {
+          await new Promise((r) => setTimeout(r, 5));
+        }
+      }
+    } finally {
+      video.dispose();
+    }
+  }
+
   private async renderVideoWithMediaRecorder(
     request: VideoRenderRequest,
     durationMs: number
@@ -331,8 +446,8 @@ export class WebMediaEngine implements MediaEngine {
       volume: request.volume
     });
 
-    const imgInfo = sniffImageHeader(request.stickerBytes);
-    const crop = computeSquareCrop(imgInfo.width, imgInfo.height, request.cropX ?? 0.5, request.cropY ?? 0.5);
+    const size = await this.stickerSize(request);
+    const crop = computeSquareCrop(size.width, size.height, request.cropX ?? 0.5, request.cropY ?? 0.5);
     const canvas = document.createElement("canvas");
     canvas.width = crop.outputSize;
     canvas.height = crop.outputSize;
@@ -342,16 +457,30 @@ export class WebMediaEngine implements MediaEngine {
     }
 
     const isWebm = request.container === "webm-alpha";
-    const imgBlob = new Blob([request.stickerBytes.slice().buffer], { type: `image/${request.stickerFormat}` });
-    const imgUrl = URL.createObjectURL(imgBlob);
+    const isClip = isVideoFormat(request.stickerFormat);
+    let clip: OpenedVideo | null = null;
+    let imgUrl = "";
     const imgEl = new Image();
-    imgEl.src = imgUrl;
-    await new Promise<void>((resolve, reject) => {
-      imgEl.onload = () => resolve();
-      imgEl.onerror = () => reject(new StikSoundError("unsupported-image", "Image load failed."));
-    });
+    if (isClip) {
+      // Real-time path: the clip plays (muted) into the canvas while MediaRecorder captures it.
+      clip = await openVideo(request.stickerBytes, request.stickerFormat as VideoFormat);
+      clip.el.loop = true;
+      await seekVideo(clip.el, (request.videoOffsetMs ?? 0) / 1000);
+    } else {
+      const imgBlob = new Blob([request.stickerBytes.slice().buffer], { type: `image/${request.stickerFormat}` });
+      imgUrl = URL.createObjectURL(imgBlob);
+      imgEl.src = imgUrl;
+      await new Promise<void>((resolve, reject) => {
+        imgEl.onload = () => resolve();
+        imgEl.onerror = () => reject(new StikSoundError("unsupported-image", "Image load failed."));
+      });
+    }
 
     const drawSticker = () => {
+      if (clip) {
+        drawCroppedFrame(ctx, clip, request.cropX ?? 0.5, request.cropY ?? 0.5, isWebm ? null : request.matteColor);
+        return;
+      }
       if (isWebm) {
         ctx.clearRect(0, 0, crop.outputSize, crop.outputSize);
       } else {
@@ -392,7 +521,8 @@ export class WebMediaEngine implements MediaEngine {
       ? ["video/webm;codecs=vp9,opus", "video/webm"].find((m) => MediaRecorder.isTypeSupported(m))
       : ["video/mp4", "video/webm;codecs=vp8,opus", "video/webm"].find((m) => MediaRecorder.isTypeSupported(m));
     if (!preferredMime) {
-      URL.revokeObjectURL(imgUrl);
+      if (imgUrl) URL.revokeObjectURL(imgUrl);
+      clip?.dispose();
       await audioCtx.close().catch(() => undefined);
       throw new StikSoundError("unsupported-codec", "No supported MediaRecorder video mime type.");
     }
@@ -411,9 +541,10 @@ export class WebMediaEngine implements MediaEngine {
       recorder.onerror = () => reject(new StikSoundError("encode-failed", "MediaRecorder failed."));
     });
 
-    const intervalId = window.setInterval(drawSticker, 66);
+    const intervalId = window.setInterval(drawSticker, clip ? 33 : 66);
     recorder.start();
     source.start();
+    if (clip) await clip.el.play().catch(() => undefined);
 
     await new Promise((r) => setTimeout(r, durationMs));
     window.clearInterval(intervalId);
@@ -421,7 +552,8 @@ export class WebMediaEngine implements MediaEngine {
     if (recorder.state !== "inactive") recorder.stop();
 
     const bytes = await done;
-    URL.revokeObjectURL(imgUrl);
+    if (imgUrl) URL.revokeObjectURL(imgUrl);
+    clip?.dispose();
     await audioCtx.close().catch(() => undefined);
 
     const outIsMp4 = preferredMime.includes("mp4");

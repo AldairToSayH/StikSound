@@ -1,4 +1,10 @@
-import { LIMITS, StikSoundError, type AudioProbeInfo, type ImageProbeInfo } from "@stiksound/core";
+import {
+  LIMITS,
+  StikSoundError,
+  type AudioProbeInfo,
+  type ImageProbeInfo,
+  type VideoFormat
+} from "@stiksound/core";
 
 function readU16LE(b: Uint8Array, o: number): number {
   return (b[o] ?? 0) | ((b[o + 1] ?? 0) << 8);
@@ -325,4 +331,23 @@ export function sniffAudioContainer(bytes: Uint8Array): AudioProbeInfo {
   }
 
   throw new StikSoundError("unsupported-audio", "Unrecognized audio container.");
+}
+
+/**
+ * Recognise short video clips by their container signature (no decoding).
+ * MP4 / MOV: an ISO-BMFF "ftyp" box ("qt  " brand = QuickTime) or a bare QuickTime atom.
+ * WebM / Matroska: EBML magic 1A 45 DF A3.
+ * Audio-only MP4s ("M4A ") are excluded so they keep going through the audio path.
+ */
+export function sniffVideoContainer(bytes: Uint8Array): VideoFormat | null {
+  if (bytes.byteLength < 12) return null;
+  const box = ascii(bytes, 4, 4);
+  if (box === "ftyp") {
+    const brand = ascii(bytes, 8, 4);
+    if (brand === "M4A " || brand === "M4B " || brand === "M4P ") return null;
+    return brand === "qt  " ? "mov" : "mp4";
+  }
+  if (box === "moov" || box === "mdat" || box === "wide" || box === "free") return "mov";
+  if (bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3) return "webm";
+  return null;
 }

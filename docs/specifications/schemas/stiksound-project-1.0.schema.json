@@ -79,7 +79,7 @@
         "id": { "type": "string", "minLength": 4, "maxLength": 64 },
         "file": { "$ref": "#/$defs/assetPath" },
         "source_name": { "type": "string", "maxLength": 255 },
-        "format": { "enum": ["png", "jpeg", "webp", "gif"] },
+        "format": { "enum": ["png", "jpeg", "webp", "gif", "mp4", "mov", "webm"] },
         "width": { "type": "integer", "minimum": 1, "maximum": 8000 },
         "height": { "type": "integer", "minimum": 1, "maximum": 8000 },
         "has_alpha": { "type": "boolean" },
@@ -131,7 +131,7 @@
       "additionalProperties": false,
       "required": ["type"],
       "properties": {
-        "type": { "enum": ["local", "myinstants"] },
+        "type": { "enum": ["local", "myinstants", "video-track"] },
         "page_url": { "type": ["string", "null"], "maxLength": 2048 },
         "media_url": { "type": ["string", "null"], "maxLength": 2048 },
         "title": { "type": ["string", "null"], "maxLength": 120 }

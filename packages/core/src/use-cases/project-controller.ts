@@ -4,6 +4,7 @@ import { LIMITS } from "../domain/limits";
 import { assertSafeZipEntryPath, sanitizeExportName, validateProjectManifest } from "../domain/schema-validator";
 import {
   EXPORT_PROFILES,
+  isVideoFormat,
   type Association,
   type AudioAsset,
   type AudioSource,
@@ -99,16 +100,24 @@ export class ProjectController {
   public async importSticker(
     state: ProjectWorkspaceState,
     bytes: Uint8Array,
-    sourceName: string
+    sourceName: string,
+    maxAudioMsOverride?: number
   ): Promise<ProjectWorkspaceState> {
     if (bytes.byteLength === 0) {
       throw new StikSoundError("unsupported-image", "Empty image payload.");
     }
-    if (bytes.byteLength > LIMITS.MAX_IMAGE_BYTES) {
-      throw new StikSoundError("file-too-large", "Image exceeds 20 MB limit.");
+    if (bytes.byteLength > LIMITS.MAX_VIDEO_BYTES) {
+      throw new StikSoundError("file-too-large", "File exceeds 100 MB limit.");
     }
 
     const probe = await this.engine.probeImage(bytes);
+    const isVideo = isVideoFormat(probe.format);
+    if (!isVideo && bytes.byteLength > LIMITS.MAX_IMAGE_BYTES) {
+      throw new StikSoundError("file-too-large", "Image exceeds 20 MB limit.");
+    }
+    if (isVideo && probe.duration_ms > LIMITS.MAX_VIDEO_DURATION_MS) {
+      throw new StikSoundError("file-too-large", "Video exceeds 60 s limit.");
+    }
     if (
       probe.width <= 0 ||
       probe.height <= 0 ||
@@ -139,8 +148,13 @@ export class ProjectController {
     }
     nextAssets.set(file, new Uint8Array(bytes));
 
-    const existingAudio = state.manifest.audios[0];
-    const prevAssoc = state.manifest.associations[0];
+    // A sound taken from the previous video belongs to that video, not to the new sticker.
+    let existingAudio = state.manifest.audios[0];
+    if (existingAudio?.source.type === "video-track") {
+      nextAssets.delete(existingAudio.file);
+      existingAudio = undefined;
+    }
+    const prevAssoc = existingAudio ? state.manifest.associations[0] : undefined;
     const nextAssociations: Association[] = existingAudio
       ? [
           {
@@ -158,17 +172,32 @@ export class ProjectController {
         ]
       : [];
 
-    return {
+    const withSticker: ProjectWorkspaceState = {
       manifest: {
         ...state.manifest,
         project: { ...state.manifest.project, updated_at: nowUtcIso() },
         stickers: [sticker],
+        audios: existingAudio ? [existingAudio] : [],
         associations: nextAssociations,
         active_association_id: nextAssociations[0]?.id ?? null
       },
       assets: nextAssets,
-      waveformPeaks: state.waveformPeaks
+      waveformPeaks: existingAudio ? state.waveformPeaks : null
     };
+
+    // Video: its own sound becomes the audio by default (the user can still pick another one).
+    // Its trim window then also chooses which part of the clip is rendered.
+    if (isVideo && this.engine.extractAudioTrack) {
+      const track = await this.engine.extractAudioTrack(bytes, probe.duration_ms);
+      return this.importAudioFile(
+        withSticker,
+        track.wavBytes,
+        track.silent ? "Video sin sonido" : "Sonido del video",
+        { type: "video-track" },
+        maxAudioMsOverride
+      );
+    }
+    return withSticker;
   }
 
   private resolveEffectiveMaxAudioMs(profileMaxMs: number, overrideMaxMs?: number): number {
@@ -594,6 +623,10 @@ export class ProjectController {
       stickerBytes,
       stickerFormat: sticker.format,
       animated: sticker.animated,
+      stickerWidth: sticker.width,
+      stickerHeight: sticker.height,
+      // Sound from the clip itself: render the same part of the clip. Other sound: clip from its start.
+      videoOffsetMs: audio.source.type === "video-track" ? assoc.start_ms : 0,
       audioBytes,
       audioFormat: audio.format,
       startMs: assoc.start_ms,

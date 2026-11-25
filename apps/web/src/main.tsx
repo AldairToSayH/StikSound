@@ -105,10 +105,10 @@ const webLabels: Record<LocaleCode, Partial<UiLabels>> = {
     ...(isTouch
       ? {
           stickerDropTitle: "Toca para elegir tu sticker",
-          stickerDropHint: "PNG, GIF, WebP o JPG desde Fotos o Archivos",
+          stickerDropHint: "Foto, GIF o video corto desde Fotos o Archivos",
           hoverCropHint: "Arrastra para encuadrar"
         }
-      : {})
+      : { stickerDropHint: "Arrastra o haz clic: PNG, GIF, WebP, JPG o video corto (MP4, MOV)" })
   },
   en: {
     exportTooltip: "Make the video and share it",
@@ -125,10 +125,10 @@ const webLabels: Record<LocaleCode, Partial<UiLabels>> = {
     ...(isTouch
       ? {
           stickerDropTitle: "Tap to choose your sticker",
-          stickerDropHint: "PNG, GIF, WebP or JPG from Photos or Files",
+          stickerDropHint: "Photo, GIF or short video from Photos or Files",
           hoverCropHint: "Drag to frame"
         }
-      : {})
+      : { stickerDropHint: "Drop or click: PNG, GIF, WebP, JPG or a short video (MP4, MOV)" })
   }
 };
 
@@ -141,7 +141,7 @@ createRoot(document.getElementById("root")!).render(
       providers={[]}
       shell={shell}
       initialLocale={locale}
-      platform={{ transparentVideo: false, myInstantsUrl: false }}
+      platform={{ transparentVideo: false, myInstantsUrl: false, videoStickers: true }}
       labelOverrides={webLabels}
     />
   </React.StrictMode>

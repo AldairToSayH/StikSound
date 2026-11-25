@@ -1,6 +1,20 @@
 import { LIMITS } from "./limits";
 
 export type ImageFormat = "png" | "jpeg" | "webp" | "gif";
+/** Short video clips used as an animated sticker source (web build). */
+export type VideoFormat = "mp4" | "mov" | "webm";
+export type StickerFormat = ImageFormat | VideoFormat;
+
+export function isVideoFormat(format: string): format is VideoFormat {
+  return format === "mp4" || format === "mov" || format === "webm";
+}
+
+/** MIME type for building a Blob of a sticker asset. MOV is labelled MP4 so Chromium will open it. */
+export function stickerMimeType(format: StickerFormat): string {
+  if (format === "webm") return "video/webm";
+  if (format === "mp4" || format === "mov") return "video/mp4";
+  return `image/${format}`;
+}
 export type AudioFormat = "mp3" | "wav" | "ogg" | "m4a" | "aac";
 export type ExportProfileId =
   | "video-mp4"
@@ -27,7 +41,7 @@ export interface StickerAsset {
   id: string;
   file: string;
   source_name: string;
-  format: ImageFormat;
+  format: StickerFormat;
   width: number;
   height: number;
   has_alpha: boolean;
@@ -36,7 +50,8 @@ export interface StickerAsset {
 }
 
 export interface AudioSource {
-  type: "local" | "myinstants";
+  /** "video-track": the sound was taken from the video sticker itself. */
+  type: "local" | "myinstants" | "video-track";
   page_url?: string | null;
   media_url?: string | null;
   title?: string | null;
@@ -106,7 +121,7 @@ export interface ProjectManifest {
 }
 
 export interface ImageProbeInfo {
-  format: ImageFormat;
+  format: StickerFormat;
   width: number;
   height: number;
   has_alpha: boolean;
@@ -143,8 +158,13 @@ export interface PeakBuckets {
 
 export interface VideoRenderRequest {
   stickerBytes: Uint8Array;
-  stickerFormat: ImageFormat;
+  stickerFormat: StickerFormat;
   animated: boolean;
+  /** Source size; needed for video stickers, whose header the engine does not sniff. */
+  stickerWidth?: number;
+  stickerHeight?: number;
+  /** Video stickers: where in the clip the rendered segment starts. */
+  videoOffsetMs?: number;
   audioBytes: Uint8Array;
   audioFormat: AudioFormat;
   startMs: number;
@@ -178,6 +198,11 @@ export interface MediaEngine {
   renderAudio(bytes: Uint8Array, edit: { start_ms: number; end_ms: number; volume: number }): Promise<PcmMono48k>;
   encodeOpus(pcm: PcmMono48k): Promise<Uint8Array>;
   renderVideo(request: VideoRenderRequest): Promise<VideoRenderResult>;
+  /**
+   * Video stickers: pull the clip's sound out as a mono WAV so it can be trimmed like any audio.
+   * Returns a silent track of the clip's length when the video has no readable sound.
+   */
+  extractAudioTrack?(videoBytes: Uint8Array, durationMs: number): Promise<{ wavBytes: Uint8Array; silent: boolean }>;
   zip(entries: ZipEntryInput[]): Promise<Uint8Array>;
   unzip(zipBytes: Uint8Array): Promise<ZipEntryInput[]>;
 }
