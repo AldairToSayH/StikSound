@@ -503,6 +503,7 @@ fn decode_gif_frames_512_inner(
         let frame_dispose = info.dispose;
         let delay_cs = if info.delay == 0 { 10 } else { info.delay };
         let working_bytes = canvas_bytes
+            + canvas_bytes
             + frame_bytes
             + if needs_previous { frame_bytes } else { 0 }
             + output_bytes * 2;
@@ -768,4 +769,97 @@ mod tests {
         assert_eq!(panned_right.dimensions(), (400, 400));
         assert_eq!(panned_right.get_pixel(350, 200).0, [255, 0, 0, 255]);
     }
+    fn make_raw_gif(canvas_w: u32, canvas_h: u32, frame_w: u32, frame_h: u32, left: u32, top: u32) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"GIF89a");
+        bytes.extend_from_slice(&(canvas_w as u16).to_le_bytes());
+        bytes.extend_from_slice(&(canvas_h as u16).to_le_bytes());
+        bytes.push(0x91);
+        bytes.push(0);
+        bytes.push(0);
+        bytes.extend_from_slice(&[0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255]);
+        bytes.push(0x2c);
+        bytes.extend_from_slice(&(left as u16).to_le_bytes());
+        bytes.extend_from_slice(&(top as u16).to_le_bytes());
+        bytes.extend_from_slice(&(frame_w as u16).to_le_bytes());
+        bytes.extend_from_slice(&(frame_h as u16).to_le_bytes());
+        bytes.push(0);
+        bytes.push(2);
+        bytes.push(3);
+        bytes.extend_from_slice(&[0x04, 0x80, 0x02]);
+        bytes.push(0);
+        bytes.push(0x3b);
+        bytes
+    }
+
+    fn make_many_frame_gif(frame_count: usize, width: u32, height: u32) -> Vec<u8> {
+        let mut buf = Vec::new();
+        let palette = &[0u8, 0, 0, 255, 0, 0, 0, 255, 0];
+        {
+            let mut encoder = Encoder::new(&mut buf, width as u16, height as u16, palette).unwrap();
+            encoder.set_repeat(Repeat::Infinite).unwrap();
+            for _ in 0..frame_count {
+                let pixels = vec![0u8; (width * height) as usize];
+                let mut frame = Frame::from_indexed_pixels(width as u16, height as u16, pixels, Some(0));
+                frame.delay = 10;
+                encoder.write_frame(&frame).unwrap();
+            }
+        }
+        buf
+    }
+
+    #[test]
+    fn gif_rejects_excessive_frame_descriptor_on_inspection() {
+        let gif = make_raw_gif(2, 2, 65535, 65535, 0, 0);
+        let err = probe_image(&gif).unwrap_err();
+        assert!(matches!(err, ImageEngineError::FileTooLarge(_)));
+    }
+
+    #[test]
+    fn gif_rejects_excessive_frame_descriptor_on_decode() {
+        let gif = make_raw_gif(2, 2, 65535, 65535, 0, 0);
+        let err = decode_gif_frames_512(&gif).unwrap_err();
+        assert!(matches!(err, ImageEngineError::FileTooLarge(_)));
+    }
+
+    #[test]
+    fn gif_rejects_too_many_frames_on_inspection() {
+        let gif = make_many_frame_gif(MAX_GIF_FRAMES + 1, 1, 1);
+        let err = probe_image(&gif).unwrap_err();
+        assert!(matches!(err, ImageEngineError::FileTooLarge(_)));
+    }
+
+    #[test]
+    fn gif_rejects_too_many_frames_on_decode() {
+        let gif = make_many_frame_gif(MAX_GIF_FRAMES + 1, 1, 1);
+        let err = decode_gif_frames_512(&gif).unwrap_err();
+        assert!(matches!(err, ImageEngineError::FileTooLarge(_)));
+    }
+
+    #[test]
+    fn gif_rejects_frame_descriptor_beyond_canvas() {
+        let gif = make_raw_gif(2, 2, 2, 2, 1, 1);
+        let err = probe_image(&gif).unwrap_err();
+        assert!(matches!(err, ImageEngineError::UnsupportedImage(_)));
+        let err = decode_gif_frames_512(&gif).unwrap_err();
+        assert!(matches!(err, ImageEngineError::UnsupportedImage(_)));
+    }
+
+    #[test]
+    fn gif_rejects_aggregate_decoded_memory_exhaustion() {
+        let gif = make_many_frame_gif(MAX_GIF_FRAMES, 512, 512);
+        let err = decode_gif_frames_512(&gif).unwrap_err();
+        assert!(matches!(err, ImageEngineError::FileTooLarge(_)));
+    }
+
+    #[test]
+    fn gif_accepts_valid_animated_gif_within_limits() {
+        let gif = make_many_frame_gif(2, 64, 64);
+        let probe = probe_image(&gif).unwrap();
+        assert!(probe.animated);
+        assert_eq!(probe.frame_count, 2);
+        let frames = decode_gif_frames_512(&gif).unwrap();
+        assert_eq!(frames.len(), 2);
+    }
+
 }
