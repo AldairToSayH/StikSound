@@ -1,5 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
+import { Capacitor } from "@capacitor/core";
 import { detectLocale, type ExportArtifact, type LocaleCode } from "@stiksound/core";
 import { WebMediaEngine } from "@stiksound/media-web";
 import {
@@ -287,7 +288,7 @@ createRoot(document.getElementById("root")!).render(
   </React.StrictMode>
 );
 
-if ("serviceWorker" in navigator && import.meta.env.PROD && window.isSecureContext) {
+if (!Capacitor.isNativePlatform() && "serviceWorker" in navigator && import.meta.env.PROD && window.isSecureContext) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("./sw.js").catch(() => undefined);
   });

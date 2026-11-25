@@ -17,6 +17,8 @@ apps/desktop/src-tauri/gen/
 # OS & Editor
 .DS_Store
 Thumbs.db
+.idea/
+.vscode/
 *.log
 .env
 .env.*

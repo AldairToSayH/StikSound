@@ -2,7 +2,9 @@
 
 <img src="docs/assets/app-icon.svg" alt="StikSound App Icon" width="120" height="120" />
 
-# StikSound
+# Sticker_con_Sonido
+
+Proyecto Android basado en StikSound. Se conserva el código fuente original, su historial y los avisos de licencia MIT y Apache 2.0. La integración Android está en `apps/web/android`; las funciones de exportación y compartir deben verificarse en un dispositivo antes de distribuir el APK como versión estable.
 
 **Crea stickers con sonido de hasta 5 o 10 segundos (con switch en pantalla) a partir de un PNG, JPG, WebP o GIF animado: pega tu sticker, elige un audio local o un enlace de MyInstants, recorta el fragmento exacto y exporta todo localmente.**
 
@@ -22,6 +24,19 @@
 ---
 
 ## 🌐 Usar en la Web vs. Instalar
+
+### Desarrollo en Android con Capacitor
+
+La app Android reutiliza la aplicación React de `apps/web`. Abre el repositorio existente en tu editor; no crees un proyecto con **Empty Activity**.
+
+1. Instala Android Studio y, desde **SDK Manager**, instala Android SDK Platform y Build-Tools.
+2. En la raíz del repositorio ejecuta `npm install` y `npm run android:sync -w apps/web`. Este último comando compila React y copia `apps/web/dist` al proyecto Android.
+3. En Android Studio elige **Open** y abre `apps/web/android`. Selecciona un teléfono o emulador y pulsa **Run**.
+4. Después de modificar la app web, repite `npm run android:sync -w apps/web` antes de compilar el APK desde **Build → Build APK(s)**.
+
+Si la sincronización de Gradle muestra `Unsupported class file major version 69`, selecciona un JDK 21 en **Settings → Build, Execution, Deployment → Build Tools → Gradle → Gradle JDK**. El JDK 25 de algunas instalaciones de Android Studio no funciona con el Gradle generado aquí.
+
+El identificador Android configurado es `io.github.aldairtosayh.stickerconsonido`. La carpeta `apps/web/android` es el proyecto nativo que se debe abrir en Android Studio.
 
 Puedes usar **StikSound directamente desde el navegador** sin instalar nada (funciona en PC, Android y iPhone como PWA), pero ten en cuenta la diferencia con **MyInstants**:
 
