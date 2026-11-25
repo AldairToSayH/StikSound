@@ -20,6 +20,7 @@ import { unzipSync, zipSync } from "fflate";
 import { Muxer as Mp4Muxer, ArrayBufferTarget as Mp4Target } from "mp4-muxer";
 import { Muxer as WebmMuxer, ArrayBufferTarget as WebmTarget } from "webm-muxer";
 import { computePeaksFromFloat32, decodeWavToMonoFloat32, encodeWavBytes, trimPcmSamples } from "./audio-utils";
+import { decodeGifFramesRgba, type DecodedGifFrame } from "./gif-decoder";
 import { scheduleGifFramesForDuration } from "./gif-scheduler";
 import { compositeRgbaOnMatte, cropAndFitSquareRgba } from "./image-utils";
 import { sniffAudioContainer, sniffImageHeader, sniffVideoContainer } from "./sniffers";
@@ -27,6 +28,34 @@ import { clipTimeSec, drawCroppedFrame, openVideo, seekVideo, type OpenedVideo }
 
 /** Frame rate used when a video clip is the sticker source. Each frame costs one seek. */
 const CLIP_FPS = 15;
+
+type ExtendedVideoEncoderConfig = VideoEncoderConfig & {
+  avc?: { format: "avc" | "annexb" };
+};
+
+/**
+ * Decodes an animated GIF into cropped 1:1 RGBA frames (composited onto matte
+ * for non-alpha exports) without requiring DOM/ImageDecoder support.
+ */
+export function prepareAnimatedGifFrames(
+  request: Pick<VideoRenderRequest, "stickerBytes" | "cropX" | "cropY" | "container" | "matteColor">
+): DecodedGifFrame[] {
+  const decoded = decodeGifFramesRgba(request.stickerBytes);
+  const isWebm = request.container === "webm-alpha";
+  const cropX = request.cropX ?? 0.5;
+  const cropY = request.cropY ?? 0.5;
+
+  return decoded.map((frame) => {
+    const cropped = cropAndFitSquareRgba(frame.rgba, frame.width, frame.height, cropX, cropY);
+    const rgba = isWebm ? cropped.data : compositeRgbaOnMatte(cropped, request.matteColor);
+    return {
+      width: cropped.width,
+      height: cropped.height,
+      delayMs: frame.delayMs,
+      rgba
+    };
+  });
+}
 
 export class WebMediaEngine implements MediaEngine {
   public async probeImage(bytes: Uint8Array): Promise<ImageProbeInfo> {
@@ -250,28 +279,104 @@ export class WebMediaEngine implements MediaEngine {
       typeof OffscreenCanvas !== "undefined"
     ) {
       const isWebm = request.container === "webm-alpha";
-      const videoCodec = isWebm ? "vp09.00.10.08" : "avc1.42001E";
-      const audioCodec = isWebm ? "opus" : "mp4a.40.2";
-
       const size = await this.stickerSize(request);
       const crop = computeSquareCrop(size.width, size.height, request.cropX ?? 0.5, request.cropY ?? 0.5);
 
-      try {
-        const vSupport = await VideoEncoder.isConfigSupported({
-          codec: videoCodec,
-          width: crop.outputSize,
-          height: crop.outputSize,
-          framerate: 24
-        });
-        const aSupport = await AudioEncoder.isConfigSupported({
-          codec: audioCodec,
-          sampleRate: 48000,
-          numberOfChannels: 1,
-          bitrate: isWebm ? 64_000 : 128_000
-        });
+      const videoCandidates: ExtendedVideoEncoderConfig[] = isWebm
+        ? [
+            {
+              codec: "vp09.00.10.08",
+              width: crop.outputSize,
+              height: crop.outputSize,
+              bitrate: 1_200_000,
+              framerate: 24,
+              alpha: "keep"
+            },
+            {
+              codec: "vp09.00.10.08",
+              width: crop.outputSize,
+              height: crop.outputSize,
+              bitrate: 1_200_000,
+              framerate: 24
+            },
+            {
+              codec: "vp8",
+              width: crop.outputSize,
+              height: crop.outputSize,
+              bitrate: 1_200_000,
+              framerate: 24
+            }
+          ]
+        : [
+            {
+              codec: "avc1.42001E",
+              width: crop.outputSize,
+              height: crop.outputSize,
+              bitrate: 1_200_000,
+              framerate: 24,
+              avc: { format: "avc" }
+            },
+            {
+              codec: "avc1.42E01E",
+              width: crop.outputSize,
+              height: crop.outputSize,
+              bitrate: 1_200_000,
+              framerate: 24,
+              avc: { format: "avc" }
+            },
+            {
+              codec: "avc1.4D401E",
+              width: crop.outputSize,
+              height: crop.outputSize,
+              bitrate: 1_200_000,
+              framerate: 24,
+              avc: { format: "avc" }
+            },
+            {
+              codec: "avc1.42001E",
+              width: crop.outputSize,
+              height: crop.outputSize,
+              bitrate: 1_200_000,
+              framerate: 24
+            }
+          ];
 
-        if (vSupport.supported && aSupport.supported) {
-          return await this.renderVideoWithWebCodecs(request, durationMs, videoCodec, audioCodec, crop.outputSize);
+      const audioBitrates = isWebm ? [64_000] : [96_000, 64_000, 128_000];
+      const audioCodec = isWebm ? "opus" : "mp4a.40.2";
+
+      try {
+        let chosenVideoConfig: ExtendedVideoEncoderConfig | null = null;
+        for (const candidate of videoCandidates) {
+          const vSupport = await VideoEncoder.isConfigSupported(candidate);
+          if (vSupport.supported) {
+            chosenVideoConfig = candidate;
+            break;
+          }
+        }
+
+        let chosenAudioConfig: AudioEncoderConfig | null = null;
+        for (const bitrate of audioBitrates) {
+          const candidate: AudioEncoderConfig = {
+            codec: audioCodec,
+            sampleRate: 48000,
+            numberOfChannels: 1,
+            bitrate
+          };
+          const aSupport = await AudioEncoder.isConfigSupported(candidate);
+          if (aSupport.supported) {
+            chosenAudioConfig = candidate;
+            break;
+          }
+        }
+
+        if (chosenVideoConfig && chosenAudioConfig) {
+          return await this.renderVideoWithWebCodecs(
+            request,
+            durationMs,
+            chosenVideoConfig,
+            chosenAudioConfig,
+            crop.outputSize
+          );
         }
       } catch {
         // Fall through to universal MediaRecorder fallback below
@@ -292,8 +397,8 @@ export class WebMediaEngine implements MediaEngine {
   private async renderVideoWithWebCodecs(
     request: VideoRenderRequest,
     durationMs: number,
-    videoCodec: string,
-    audioCodec: string,
+    videoConfig: ExtendedVideoEncoderConfig,
+    audioConfig: AudioEncoderConfig,
     outputSize: number
   ): Promise<VideoRenderResult> {
     const pcm = await this.renderAudio(request.audioBytes, {
@@ -320,40 +425,38 @@ export class WebMediaEngine implements MediaEngine {
     const webmMuxer = webmTarget
       ? new WebmMuxer({
           target: webmTarget,
-          video: { codec: "V_VP9", width: outputSize, height: outputSize, alpha: true },
+          video: {
+            codec: videoConfig.codec.startsWith("vp8") ? "V_VP8" : "V_VP9",
+            width: outputSize,
+            height: outputSize,
+            alpha: videoConfig.alpha === "keep"
+          },
           audio: { codec: "A_OPUS", sampleRate: 48000, numberOfChannels: 1 }
         })
       : null;
 
+    let encoderFailure: unknown = null;
     const videoEncoder = new VideoEncoder({
       output: (chunk, meta) => {
         mp4Muxer?.addVideoChunk(chunk, meta);
         webmMuxer?.addVideoChunk(chunk, meta);
       },
-      error: () => {}
+      error: (err) => {
+        encoderFailure = err;
+      }
     });
-    videoEncoder.configure({
-      codec: videoCodec,
-      width: outputSize,
-      height: outputSize,
-      bitrate: 1_200_000,
-      framerate: 24,
-      ...(isWebm ? { alpha: "keep" as const } : {})
-    });
+    videoEncoder.configure(videoConfig);
 
     const audioEncoder = new AudioEncoder({
       output: (chunk, meta) => {
         mp4Muxer?.addAudioChunk(chunk, meta);
         webmMuxer?.addAudioChunk(chunk, meta);
       },
-      error: () => {}
+      error: (err) => {
+        encoderFailure = err;
+      }
     });
-    audioEncoder.configure({
-      codec: audioCodec,
-      sampleRate: 48000,
-      numberOfChannels: 1,
-      bitrate: isWebm ? 64_000 : 128_000
-    });
+    audioEncoder.configure(audioConfig);
 
     if (isClip) {
       await this.encodeClipFrames(request, durationMs, outputSize, videoEncoder);
@@ -368,21 +471,28 @@ export class WebMediaEngine implements MediaEngine {
       vf.close();
     }
 
-    const audioData = new AudioData({
-      format: "f32-planar",
-      sampleRate: 48000,
-      numberOfFrames: pcm.samples.length,
-      numberOfChannels: 1,
-      timestamp: 0,
-      data: pcm.samples.slice()
-    });
-    audioEncoder.encode(audioData);
-    audioData.close();
+    const chunkSamples = 4800; // 100ms chunks at 48 kHz for broad AAC/Opus encoder compatibility
+    for (let offset = 0; offset < pcm.samples.length; offset += chunkSamples) {
+      const slice = pcm.samples.subarray(offset, Math.min(pcm.samples.length, offset + chunkSamples));
+      const audioData = new AudioData({
+        format: "f32-planar",
+        sampleRate: 48000,
+        numberOfFrames: slice.length,
+        numberOfChannels: 1,
+        timestamp: Math.round((offset / 48000) * 1_000_000),
+        data: slice.slice()
+      });
+      audioEncoder.encode(audioData);
+      audioData.close();
+    }
 
     await videoEncoder.flush();
     await audioEncoder.flush();
     videoEncoder.close();
     audioEncoder.close();
+    if (encoderFailure) {
+      throw encoderFailure;
+    }
 
     if (mp4Muxer && mp4Target) {
       mp4Muxer.finalize();
@@ -459,47 +569,48 @@ export class WebMediaEngine implements MediaEngine {
     const isWebm = request.container === "webm-alpha";
     const isClip = isVideoFormat(request.stickerFormat);
     let clip: OpenedVideo | null = null;
+    let gifImageDatas: ImageData[] | null = null;
+    let gifCumEndMs: number[] = [];
+    let gifCycleMs = 1;
     let imgUrl = "";
-    const imgEl = new Image();
+    let imgEl: HTMLImageElement | null = null;
+
     if (isClip) {
       // Real-time path: the clip plays (muted) into the canvas while MediaRecorder captures it.
       clip = await openVideo(request.stickerBytes, request.stickerFormat as VideoFormat);
       clip.el.loop = true;
       await seekVideo(clip.el, (request.videoOffsetMs ?? 0) / 1000);
     } else {
-      const imgBlob = new Blob([request.stickerBytes.slice().buffer], { type: `image/${request.stickerFormat}` });
-      imgUrl = URL.createObjectURL(imgBlob);
-      imgEl.src = imgUrl;
-      await new Promise<void>((resolve, reject) => {
-        imgEl.onload = () => resolve();
-        imgEl.onerror = () => reject(new StikSoundError("unsupported-image", "Image load failed."));
-      });
-    }
+      if (request.animated && request.stickerFormat === "gif") {
+        try {
+          const decodedGif = prepareAnimatedGifFrames(request);
+          if (decodedGif.length > 0) {
+            gifImageDatas = decodedGif.map(
+              (f) => new ImageData(new Uint8ClampedArray(f.rgba), f.width, f.height)
+            );
+            let acc = 0;
+            gifCumEndMs = decodedGif.map((f) => {
+              acc += f.delayMs;
+              return acc;
+            });
+            gifCycleMs = Math.max(1, acc);
+          }
+        } catch {
+          gifImageDatas = null;
+        }
+      }
 
-    const drawSticker = () => {
-      if (clip) {
-        drawCroppedFrame(ctx, clip, request.cropX ?? 0.5, request.cropY ?? 0.5, isWebm ? null : request.matteColor);
-        return;
+      if (!gifImageDatas) {
+        const imgBlob = new Blob([request.stickerBytes.slice().buffer], { type: `image/${request.stickerFormat}` });
+        imgUrl = URL.createObjectURL(imgBlob);
+        imgEl = new Image();
+        imgEl.src = imgUrl;
+        await new Promise<void>((resolve, reject) => {
+          imgEl!.onload = () => resolve();
+          imgEl!.onerror = () => reject(new StikSoundError("unsupported-image", "Image load failed."));
+        });
       }
-      if (isWebm) {
-        ctx.clearRect(0, 0, crop.outputSize, crop.outputSize);
-      } else {
-        ctx.fillStyle = request.matteColor;
-        ctx.fillRect(0, 0, crop.outputSize, crop.outputSize);
-      }
-      ctx.drawImage(
-        imgEl,
-        crop.srcX,
-        crop.srcY,
-        crop.cropSide,
-        crop.cropSide,
-        0,
-        0,
-        crop.outputSize,
-        crop.outputSize
-      );
-    };
-    drawSticker();
+    }
 
     const audioCtx = new AudioContext({ sampleRate: 48000 });
     // Mobile Safari starts contexts "suspended"; a suspended context records silence.
@@ -511,7 +622,43 @@ export class WebMediaEngine implements MediaEngine {
     const dest = audioCtx.createMediaStreamDestination();
     source.connect(dest);
 
-    const videoStream = canvas.captureStream(15);
+    const videoStream = canvas.captureStream(24);
+    const videoTrack = videoStream.getVideoTracks()[0] as { requestFrame?: () => void } | undefined;
+    const startedAt = performance.now();
+
+    const drawSticker = () => {
+      if (clip) {
+        drawCroppedFrame(ctx, clip, request.cropX ?? 0.5, request.cropY ?? 0.5, isWebm ? null : request.matteColor);
+      } else if (gifImageDatas && gifImageDatas.length > 0) {
+        const elapsed = (performance.now() - startedAt) % gifCycleMs;
+        let idx = 0;
+        while (idx < gifCumEndMs.length - 1 && elapsed >= gifCumEndMs[idx]!) {
+          idx++;
+        }
+        ctx.putImageData(gifImageDatas[idx]!, 0, 0);
+      } else if (imgEl) {
+        if (isWebm) {
+          ctx.clearRect(0, 0, crop.outputSize, crop.outputSize);
+        } else {
+          ctx.fillStyle = request.matteColor;
+          ctx.fillRect(0, 0, crop.outputSize, crop.outputSize);
+        }
+        ctx.drawImage(
+          imgEl,
+          crop.srcX,
+          crop.srcY,
+          crop.cropSide,
+          crop.cropSide,
+          0,
+          0,
+          crop.outputSize,
+          crop.outputSize
+        );
+      }
+      videoTrack?.requestFrame?.();
+    };
+    drawSticker();
+
     const combined = new MediaStream([
       ...videoStream.getVideoTracks(),
       ...dest.stream.getAudioTracks()
@@ -541,7 +688,7 @@ export class WebMediaEngine implements MediaEngine {
       recorder.onerror = () => reject(new StikSoundError("encode-failed", "MediaRecorder failed."));
     });
 
-    const intervalId = window.setInterval(drawSticker, clip ? 33 : 66);
+    const intervalId = window.setInterval(drawSticker, 33);
     recorder.start();
     source.start();
     if (clip) await clip.el.play().catch(() => undefined);
@@ -575,59 +722,94 @@ export class WebMediaEngine implements MediaEngine {
     const cropX = request.cropX ?? 0.5;
     const cropY = request.cropY ?? 0.5;
 
-    const drawFrameOnCanvas = (rgba: Uint8Array, size: number): OffscreenCanvas => {
+    const drawFrameOnCanvas = (rgba: Uint8Array, size: number, alreadyMatted = false): OffscreenCanvas => {
       const c = new OffscreenCanvas(size, size);
       const ctx = c.getContext("2d")!;
-      const finalPixels = isWebm
-        ? rgba
-        : compositeRgbaOnMatte({ width: size, height: size, data: rgba }, request.matteColor);
+      const finalPixels =
+        alreadyMatted || isWebm
+          ? rgba
+          : compositeRgbaOnMatte({ width: size, height: size, data: rgba }, request.matteColor);
       ctx.putImageData(new ImageData(new Uint8ClampedArray(finalPixels), size, size), 0, 0);
       return c;
     };
 
-    if (request.animated && request.stickerFormat === "gif" && typeof ImageDecoder !== "undefined") {
-      const decoder = new ImageDecoder({ data: request.stickerBytes, type: "image/gif" });
-      await decoder.tracks.ready;
-      const count = decoder.tracks.selectedTrack?.frameCount ?? 1;
-      const decodedCanvases: OffscreenCanvas[] = [];
-      const timings: Array<{ frameIndex: number; delayMs: number }> = [];
+    if (request.animated && request.stickerFormat === "gif") {
+      let decodedCanvases: OffscreenCanvas[] = [];
+      let timings: Array<{ frameIndex: number; delayMs: number }> = [];
 
-      for (let i = 0; i < count; i++) {
-        const res = await decoder.decode({ frameIndex: i });
-        const vf = res.image;
-        const crop = computeSquareCrop(vf.displayWidth, vf.displayHeight, cropX, cropY);
-        const c = new OffscreenCanvas(crop.outputSize, crop.outputSize);
-        const ctx = c.getContext("2d")!;
-        if (!isWebm) {
-          ctx.fillStyle = request.matteColor;
-          ctx.fillRect(0, 0, crop.outputSize, crop.outputSize);
-        } else {
-          ctx.clearRect(0, 0, crop.outputSize, crop.outputSize);
-        }
-        ctx.drawImage(
-          vf,
-          crop.srcX,
-          crop.srcY,
-          crop.cropSide,
-          crop.cropSide,
-          0,
-          0,
-          crop.outputSize,
-          crop.outputSize
-        );
-        const delayMs = Math.max(20, Math.round((vf.duration ?? 100_000) / 1000));
-        vf.close();
-        decodedCanvases.push(c);
-        timings.push({ frameIndex: i, delayMs });
+      try {
+        const gifFrames = prepareAnimatedGifFrames(request);
+        decodedCanvases = gifFrames.map((f) => drawFrameOnCanvas(f.rgba, f.width, true));
+        timings = gifFrames.map((f, frameIndex) => ({ frameIndex, delayMs: f.delayMs }));
+      } catch {
+        decodedCanvases = [];
+        timings = [];
       }
-      decoder.close();
 
-      const scheduled = scheduleGifFramesForDuration(timings, durationMs);
-      return scheduled.map((s) => ({
-        canvas: decodedCanvases[s.frameIndex]!,
-        timestampUs: s.timestampUs,
-        durationUs: s.durationUs
-      }));
+      if (decodedCanvases.length === 0 && typeof ImageDecoder !== "undefined") {
+        const decoder = new ImageDecoder({ data: request.stickerBytes, type: "image/gif" });
+        await decoder.tracks.ready;
+        const count = decoder.tracks.selectedTrack?.frameCount ?? 1;
+
+        for (let i = 0; i < count; i++) {
+          const res = await decoder.decode({ frameIndex: i });
+          const vf = res.image;
+          const crop = computeSquareCrop(vf.displayWidth, vf.displayHeight, cropX, cropY);
+          const c = new OffscreenCanvas(crop.outputSize, crop.outputSize);
+          const ctx = c.getContext("2d")!;
+          if (!isWebm) {
+            ctx.fillStyle = request.matteColor;
+            ctx.fillRect(0, 0, crop.outputSize, crop.outputSize);
+          } else {
+            ctx.clearRect(0, 0, crop.outputSize, crop.outputSize);
+          }
+          ctx.drawImage(
+            vf,
+            crop.srcX,
+            crop.srcY,
+            crop.cropSide,
+            crop.cropSide,
+            0,
+            0,
+            crop.outputSize,
+            crop.outputSize
+          );
+          const delayMs = Math.max(20, Math.round((vf.duration ?? 100_000) / 1000));
+          vf.close();
+          decodedCanvases.push(c);
+          timings.push({ frameIndex: i, delayMs });
+        }
+        decoder.close();
+      }
+
+      if (decodedCanvases.length > 0 && timings.length > 0) {
+        const scheduled = scheduleGifFramesForDuration(timings, durationMs);
+        // Resample onto a steady 24 fps timeline so hardware H.264/VP9 encoders advance cleanly
+        const totalUs = Math.max(41_667, durationMs * 1000);
+        const fps = 24;
+        const resampled: Array<{ canvas: OffscreenCanvas; timestampUs: number; durationUs: number }> = [];
+        let schedIdx = 0;
+
+        for (let frameIdx = 0; ; frameIdx++) {
+          const tUs = Math.round((frameIdx * 1_000_000) / fps);
+          if (tUs >= totalUs) break;
+          while (
+            schedIdx < scheduled.length - 1 &&
+            tUs >= scheduled[schedIdx]!.timestampUs + scheduled[schedIdx]!.durationUs
+          ) {
+            schedIdx++;
+          }
+          const nextTUs = Math.min(totalUs, Math.round(((frameIdx + 1) * 1_000_000) / fps));
+          const durUs = Math.max(1, nextTUs - tUs);
+          const active = scheduled[schedIdx]!;
+          resampled.push({
+            canvas: decodedCanvases[active.frameIndex]!,
+            timestampUs: tUs,
+            durationUs: durUs
+          });
+        }
+        return resampled;
+      }
     }
 
     const staticFrame = await this.renderSticker(request.stickerBytes, {

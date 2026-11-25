@@ -273,6 +273,25 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) {
         return;
       }
+      const candidates: Array<{ file: File; rank: number }> = [];
+      const rankImage = (mime: string, name: string): number => {
+        const m = mime.toLowerCase();
+        const n = name.toLowerCase();
+        if (m === "image/gif" || n.endsWith(".gif")) return 3;
+        if (m === "image/webp" || n.endsWith(".webp")) return 2;
+        return 1;
+      };
+
+      const files = e.clipboardData?.files;
+      if (files) {
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i]!;
+          if (f.type.startsWith("image/") || /\.(png|jpe?g|webp|gif)$/i.test(f.name)) {
+            candidates.push({ file: f, rank: rankImage(f.type, f.name) });
+          }
+        }
+      }
+
       const items = e.clipboardData?.items;
       if (items) {
         for (let i = 0; i < items.length; i++) {
@@ -280,12 +299,18 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
           if (item.type.startsWith("image/")) {
             const file = item.getAsFile();
             if (file) {
-              e.preventDefault();
-              await importStickerBytes(new Uint8Array(await file.arrayBuffer()), file.name || "pasted.png");
-              return;
+              candidates.push({ file, rank: rankImage(item.type || file.type, file.name) });
             }
           }
         }
+      }
+
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => b.rank - a.rank);
+        const best = candidates[0]!.file;
+        e.preventDefault();
+        await importStickerBytes(new Uint8Array(await best.arrayBuffer()), best.name || "pasted.png");
+        return;
       }
       const text = e.clipboardData?.getData("text/plain")?.trim();
       if (allowMyInstantsUrl && text && /^https?:\/\//i.test(text)) {

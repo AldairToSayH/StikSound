@@ -4,7 +4,9 @@ import {
   WebMediaEngine,
   compositeRgbaOnMatte,
   cropAndFitSquareRgba,
+  decodeGifFramesRgba,
   encodeWavBytes,
+  prepareAnimatedGifFrames,
   scheduleGifFramesForDuration,
   sniffImageHeader,
   trimPcmSamples
@@ -24,19 +26,25 @@ function makeMinimalPngHeader(w: number, h: number, colorType = 6): Uint8Array {
 }
 
 function makeAnimatedGifBytes(): Uint8Array {
-  // GIF89a 2x2 with 2 frames, transparency flag on, delay 50cs (500ms) each
+  // GIF89a 2x2 with 2 frames, GCT [red, green, blue, transparent], LZW minCodeSize=2,
+  // Frame 1 (20cs = 200ms) draws color index 0 (red), Frame 2 (30cs = 300ms) draws color index 1 (green)
   return new Uint8Array([
     0x47, 0x49, 0x46, 0x38, 0x39, 0x61, // GIF89a
-    0x02, 0x00, 0x02, 0x00, 0x80, 0x00, 0x00, // 2x2, GCT 2 colors
-    0x00, 0x00, 0x00, 0xff, 0x00, 0x00, // palette
-    // Frame 1 GCE
-    0x21, 0xf9, 0x04, 0x01, 0x32, 0x00, 0x00, 0x00,
-    // Image descriptor 1
-    0x2c, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x02, 0x00, 0x00, 0x02, 0x02, 0x44, 0x01, 0x00,
-    // Frame 2 GCE
-    0x21, 0xf9, 0x04, 0x01, 0x32, 0x00, 0x00, 0x00,
-    // Image descriptor 2
-    0x2c, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x02, 0x00, 0x00, 0x02, 0x02, 0x44, 0x01, 0x00,
+    0x02, 0x00, 0x02, 0x00, 0x91, 0x00, 0x00, // 2x2, GCT 4 colors (2^(1+1)=4)
+    0xff, 0x00, 0x00, // 0: red
+    0x00, 0xff, 0x00, // 1: green
+    0x00, 0x00, 0xff, // 2: blue
+    0x00, 0x00, 0x00, // 3: transparent placeholder
+    // Frame 1 GCE: disposal=0, transparent=true, index=3, delay=20cs (200ms)
+    0x21, 0xf9, 0x04, 0x01, 0x14, 0x00, 0x03, 0x00,
+    // Image descriptor 1 + LZW min=2: clear(4),0,0,0,0,eoi(5) -> 3-bit codes: 100,000,000,000,000,101 = [0x04, 0x80, 0x02]
+    0x2c, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x02, 0x00, 0x00, 0x02, 0x03, 0x04, 0x80, 0x02, 0x00,
+    // Frame 2 GCE: disposal=0, transparent=true, index=3, delay=30cs (300ms)
+    0x21, 0xf9, 0x04, 0x01, 0x1e, 0x00, 0x03, 0x00,
+    // Image descriptor 2 (1x1 overlay at (0,0) with index 1 = green, leaving rest red from frame 1):
+    // LZW min=2: clear(4),1,eoi(5) -> 3-bit codes: 100,001,101 -> bits: 00001100=0x0c, 0x05? let's encode cleanly:
+    // LSB-first: code0=4(100), code1=1(001)-> bits 0..2=100, 3..5=001, 6..7=10 -> byte0 = 0b10_001_100 = 0x8c, bit8=1 -> byte1 = 0x01
+    0x2c, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x8c, 0x01, 0x00,
     0x3b
   ]);
 }
@@ -59,9 +67,40 @@ describe("packages/media-web", () => {
     expect(gif.animated).toBe(true);
     expect(gif.has_alpha).toBe(true);
     expect(gif.frame_count).toBe(2);
-    expect(gif.duration_ms).toBe(1000);
+    expect(gif.duration_ms).toBe(500);
 
     expect(() => sniffImageHeader(makeMinimalPngHeader(9000, 9000, 6))).toThrowError(/file-too-large/);
+  });
+
+  it("decodes animated GIF frames with distinct RGBA content and compositing (Issue #3)", () => {
+    const gifBytes = makeAnimatedGifBytes();
+    const decoded = decodeGifFramesRgba(gifBytes);
+    expect(decoded).toHaveLength(2);
+    expect(decoded[0]!.delayMs).toBe(200);
+    expect(decoded[1]!.delayMs).toBe(300);
+
+    // Frame 1 pixel (0,0) is red [255, 0, 0, 255]
+    expect(Array.from(decoded[0]!.rgba.slice(0, 4))).toEqual([255, 0, 0, 255]);
+    // Frame 2 pixel (0,0) is green [0, 255, 0, 255], while pixel (1,0) retains red from Frame 1
+    expect(Array.from(decoded[1]!.rgba.slice(0, 4))).toEqual([0, 255, 0, 255]);
+    expect(Array.from(decoded[1]!.rgba.slice(4, 8))).toEqual([255, 0, 0, 255]);
+
+    const prepared = prepareAnimatedGifFrames({
+      stickerBytes: gifBytes,
+      cropX: 0.5,
+      cropY: 0.5,
+      container: "mp4",
+      matteColor: "#FFFFFF"
+    });
+    expect(prepared).toHaveLength(2);
+    expect(Array.from(prepared[0]!.rgba.slice(0, 4))).not.toEqual(Array.from(prepared[1]!.rgba.slice(0, 4)));
+
+    const schedule = scheduleGifFramesForDuration(
+      prepared.map((f, frameIndex) => ({ frameIndex, delayMs: f.delayMs })),
+      1_000
+    );
+    expect(schedule.some((s) => s.frameIndex === 0)).toBe(true);
+    expect(schedule.some((s) => s.frameIndex === 1)).toBe(true);
   });
 
   it("preserves alpha during 1:1 input-driven crop and cleanly composites onto matte", () => {
