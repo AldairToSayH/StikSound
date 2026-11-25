@@ -3,7 +3,7 @@ import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { StikSoundError, type MediaEngine, type SoundProvider } from "@stiksound/core";
-import { StikSoundMinimalApp } from "../src/index";
+import { StikSoundMinimalApp, TimelineTrimBar } from "../src/index";
 
 afterEach(() => {
   cleanup();
@@ -144,6 +144,41 @@ describe("StikSoundMinimalApp UI", () => {
     await waitFor(() => expect(screen.getByTestId("myinstants-url-input")).toBeTruthy());
     expect(okArrowBtn.disabled).toBe(true);
     expect(container.querySelector('[data-testid="sticker-loaded-badge"]')).toBeNull();
+  });
+
+  it("preserves a shorter saved trim when repositioning audio under the 10s cap", () => {
+    const onChangeRange = vi.fn();
+    render(
+      <TimelineTrimBar
+        hasAudio
+        durationMs={8_000}
+        startMs={1_000}
+        endMs={6_000}
+        maxWindowMs={10_000}
+        peaks={null}
+        isPlaying={false}
+        isBusy={false}
+        urlInput=""
+        onUrlInputChange={vi.fn()}
+        onSubmitUrl={vi.fn()}
+        onSelectAudioFile={vi.fn()}
+        onChangeRange={onChangeRange}
+        onTogglePlay={vi.fn()}
+        labels={{ placeholder: "Audio", pickBtn: "Audio", play: "Play", stop: "Stop" }}
+      />
+    );
+
+    const slider = screen.getByTestId("trim-slider") as HTMLInputElement;
+    expect(slider.max).toBe("3000");
+    fireEvent.change(slider, { target: { value: "2500" } });
+    expect(onChangeRange).toHaveBeenLastCalledWith(2_500, 7_500);
+
+    const track = screen.getByTestId("waveform-track");
+    Object.defineProperty(track, "getBoundingClientRect", {
+      value: () => ({ left: 0, top: 0, width: 200, height: 40, right: 200, bottom: 40 })
+    });
+    fireEvent.click(track, { clientX: 100 });
+    expect(onChangeRange).toHaveBeenLastCalledWith(1_500, 6_500);
   });
 
   it("shows localized error banner when an invalid URL is submitted", async () => {

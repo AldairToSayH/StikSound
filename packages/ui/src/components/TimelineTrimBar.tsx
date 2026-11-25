@@ -49,6 +49,11 @@ export const TimelineTrimBar: React.FC<TimelineTrimBarProps> = ({
   const trackRef = useRef<HTMLDivElement>(null);
 
   const selectedMs = Math.max(0, endMs - startMs);
+  const fullWindowMs = Math.min(maxWindowMs, durationMs);
+  const hasPartialTrim = selectedMs >= LIMITS.MIN_TRIM_DURATION_MS && selectedMs < fullWindowMs;
+  const activeWindowMs = hasPartialTrim ? selectedMs : fullWindowMs;
+  const maxStartMs = Math.max(0, durationMs - activeWindowMs);
+  const boundedStartMs = Math.max(0, Math.min(startMs, maxStartMs));
   const windowLeftPct = durationMs > 0 ? (startMs / durationMs) * 100 : 0;
   const windowWidthPct = durationMs > 0 ? ((endMs - startMs) / durationMs) * 100 : 100;
 
@@ -71,10 +76,10 @@ export const TimelineTrimBar: React.FC<TimelineTrimBarProps> = ({
     const rect = trackRef.current.getBoundingClientRect();
     if (rect.width <= 0) return;
     const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    if (activeWindowMs <= 0) return;
     const clickedMs = Math.round(ratio * durationMs);
-    const windowSize = Math.min(maxWindowMs, durationMs);
-    const nextStart = Math.max(0, Math.min(durationMs - windowSize, Math.round(clickedMs - windowSize / 2)));
-    onChangeRange(nextStart, nextStart + windowSize);
+    const nextStart = Math.max(0, Math.min(maxStartMs, Math.round(clickedMs - activeWindowMs / 2)));
+    onChangeRange(nextStart, nextStart + activeWindowMs);
   };
 
   return (
@@ -171,19 +176,19 @@ export const TimelineTrimBar: React.FC<TimelineTrimBarProps> = ({
             />
           </div>
 
-          {durationMs > maxWindowMs && (
+          {activeWindowMs > 0 && durationMs > activeWindowMs && (
             <input
               type="range"
               data-testid="trim-slider"
-              aria-label={`${formatSec(maxWindowMs)} window position`}
+              aria-label={`${formatSec(activeWindowMs)} window position`}
               className="stik-trim-slider"
               min={0}
-              max={Math.max(0, durationMs - maxWindowMs)}
+              max={maxStartMs}
               step={50}
-              value={startMs}
+              value={boundedStartMs}
               onChange={(e) => {
                 const nextStart = Number(e.target.value);
-                onChangeRange(nextStart, Math.min(durationMs, nextStart + maxWindowMs));
+                onChangeRange(nextStart, nextStart + activeWindowMs);
               }}
             />
           )}
