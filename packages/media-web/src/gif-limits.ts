@@ -78,6 +78,26 @@ export function assertGifFrameDescriptor(
   return pixelCount;
 }
 
+/**
+ * Transient bytes `decodeGifFramesRgba` holds while it decodes one frame: the
+ * working canvas, the joined LZW data, the LZW index output (doubled when the
+ * frame is interlaced) and, for disposal method 3, the saved canvas region.
+ * The image probe uses the same figure so that a GIF that passes the probe
+ * also passes export. `crates/image-engine` (`export_gif_frame_working_bytes`)
+ * mirrors this formula for the desktop probe.
+ */
+export function gifFrameWorkingBytes(
+  canvasBytes: number,
+  lzwDataBytes: number,
+  framePixels: number,
+  interlaced: boolean,
+  disposalMethod: number
+): number {
+  const indexBytes = framePixels * (interlaced ? 2 : 1);
+  const previousBytes = disposalMethod === 3 ? framePixels * RGBA_CHANNELS : 0;
+  return canvasBytes + lzwDataBytes + indexBytes + previousBytes;
+}
+
 export function assertGifDecodedMemory(
   retainedBytes: number,
   nextRetainedBytes: number,

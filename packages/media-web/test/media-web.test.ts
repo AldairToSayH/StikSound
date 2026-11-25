@@ -257,7 +257,35 @@ describe("packages/media-web gif resource limits", () => {
     const frames = Array.from({ length: 300 }, () => ({ width: 512, height: 512, data: D0 }));
     const gif = makeGif(512, 512, frames);
     expect(() => decodeGifFramesRgba(gif)).toThrowError(/file-too-large/);
+    expect(() => sniffImageHeader(gif)).toThrowError(/file-too-large/);
   });
+
+  // A 512x512 canvas retains 1 MiB per decoded frame, so the 256 MiB budget
+  // fits 254 plain frames, or 253 when each frame keeps a disposal buffer.
+  it.each([
+    { count: 254, disposal: 0, exportOk: true },
+    { count: 255, disposal: 0, exportOk: false },
+    { count: 253, disposal: 3, exportOk: true },
+    { count: 254, disposal: 3, exportOk: false }
+  ])(
+    "probe and export agree on the decoded memory budget: $count frames, disposal method $disposal",
+    ({ count, disposal, exportOk }) => {
+      const frames = Array.from({ length: count }, () => ({
+        width: 512,
+        height: 512,
+        data: D0,
+        gce: { disposal }
+      }));
+      const gif = makeGif(512, 512, frames);
+      if (exportOk) {
+        expect(decodeGifFramesRgba(gif)).toHaveLength(count);
+        expect(sniffImageHeader(gif).frame_count).toBe(count);
+      } else {
+        expect(() => decodeGifFramesRgba(gif)).toThrowError(/file-too-large/);
+        expect(() => sniffImageHeader(gif)).toThrowError(/file-too-large/);
+      }
+    }
+  );
 
   it("rejects a GIF with invalid frame bounds", () => {
     const gif = makeGif(4, 4, [{ left: 3, top: 3, width: 2, height: 2, data: D0 }]);

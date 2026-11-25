@@ -5,7 +5,12 @@ import {
   type ImageProbeInfo,
   type VideoFormat
 } from "@stiksound/core";
-import { assertGifCanvas, assertGifFrameDescriptor } from "./gif-limits";
+import {
+  assertGifCanvas,
+  assertGifDecodedMemory,
+  assertGifFrameDescriptor,
+  gifFrameWorkingBytes
+} from "./gif-limits";
 
 function readU16LE(b: Uint8Array, o: number): number {
   return (b[o] ?? 0) | ((b[o + 1] ?? 0) << 8);
@@ -43,17 +48,24 @@ function assertDimensionsSafe(width: number, height: number): void {
   }
 }
 
-function skipGifSubBlocks(bytes: Uint8Array, start: number): number {
+/** Walks a GIF sub-block chain; returns the position after it and its payload size. */
+function measureGifSubBlocks(bytes: Uint8Array, start: number): { end: number; dataLength: number } {
   let pos = start;
+  let dataLength = 0;
   while (pos < bytes.byteLength) {
     const subLen = bytes[pos++]!;
-    if (subLen === 0) return pos;
+    if (subLen === 0) return { end: pos, dataLength };
     if (subLen > bytes.byteLength - pos) {
       throw new StikSoundError("unsupported-image", "Truncated GIF data sub-block.");
     }
     pos += subLen;
+    dataLength += subLen;
   }
   throw new StikSoundError("unsupported-image", "Truncated GIF sub-block chain.");
+}
+
+function skipGifSubBlocks(bytes: Uint8Array, start: number): number {
+  return measureGifSubBlocks(bytes, start).end;
 }
 
 export function sniffImageHeader(bytes: Uint8Array): ImageProbeInfo {
@@ -204,11 +216,12 @@ export function sniffImageHeader(bytes: Uint8Array): ImageProbeInfo {
     }
     const width = readU16LE(bytes, 6);
     const height = readU16LE(bytes, 8);
-    assertGifCanvas(width, height);
+    const canvasSize = assertGifCanvas(width, height);
 
     const packed = bytes[10] ?? 0;
+    const hasGlobalPalette = (packed & 0x80) !== 0;
     let pos = 13;
-    if ((packed & 0x80) !== 0) {
+    if (hasGlobalPalette) {
       const gctSize = 3 * (1 << ((packed & 0x07) + 1));
       if (pos + gctSize > bytes.byteLength) {
         throw new StikSoundError("unsupported-image", "Truncated GIF global color table.");
@@ -220,6 +233,9 @@ export function sniffImageHeader(bytes: Uint8Array): ImageProbeInfo {
     let durationMs = 0;
     let hasAlpha = false;
     let pendingDelayMs = 100;
+    let pendingDisposal = 0;
+    // Same accounting as decodeGifFramesRgba, so a GIF that passes the probe also passes export.
+    let retainedBytes = 0;
 
     while (pos < bytes.byteLength) {
       const block = bytes[pos++];
@@ -240,6 +256,7 @@ export function sniffImageHeader(bytes: Uint8Array): ImageProbeInfo {
           }
           const gcePacked = bytes[pos + 1]!;
           if ((gcePacked & 0x01) !== 0) hasAlpha = true;
+          pendingDisposal = (gcePacked >> 2) & 0x07;
           const delayCs = readU16LE(bytes, pos + 2);
           pendingDelayMs = (delayCs === 0 ? 10 : delayCs) * 10;
           pos += 1 + blockSize;
@@ -258,8 +275,10 @@ export function sniffImageHeader(bytes: Uint8Array): ImageProbeInfo {
         const frameHeight = readU16LE(bytes, pos + 6);
         const imgPacked = bytes[pos + 8]!;
         pos += 9;
-        assertGifFrameDescriptor(width, height, left, top, frameWidth, frameHeight);
-        if ((imgPacked & 0x80) !== 0) {
+        const framePixels = assertGifFrameDescriptor(width, height, left, top, frameWidth, frameHeight);
+        const hasLocalPalette = (imgPacked & 0x80) !== 0;
+        const interlaced = (imgPacked & 0x40) !== 0;
+        if (hasLocalPalette) {
           const lctSize = 3 * (1 << ((imgPacked & 0x07) + 1));
           if (pos + lctSize > bytes.byteLength) {
             throw new StikSoundError("unsupported-image", "Truncated GIF local color table.");
@@ -270,7 +289,8 @@ export function sniffImageHeader(bytes: Uint8Array): ImageProbeInfo {
           throw new StikSoundError("unsupported-image", "Truncated GIF image data.");
         }
         pos++; // LZW min code size
-        pos = skipGifSubBlocks(bytes, pos);
+        const imageData = measureGifSubBlocks(bytes, pos);
+        pos = imageData.end;
         frameCount++;
         if (frameCount > LIMITS.MAX_GIF_FRAMES) {
           throw new StikSoundError(
@@ -278,8 +298,21 @@ export function sniffImageHeader(bytes: Uint8Array): ImageProbeInfo {
             `GIF exceeds the ${LIMITS.MAX_GIF_FRAMES} frame limit.`
           );
         }
+        // The decoder skips frames without a palette, so they retain no memory.
+        if (hasGlobalPalette || hasLocalPalette) {
+          const workingBytes = gifFrameWorkingBytes(
+            canvasSize.byteLength,
+            imageData.dataLength,
+            framePixels,
+            interlaced,
+            pendingDisposal
+          );
+          assertGifDecodedMemory(retainedBytes, canvasSize.byteLength, workingBytes);
+          retainedBytes += canvasSize.byteLength;
+        }
         durationMs += pendingDelayMs;
         pendingDelayMs = 100;
+        pendingDisposal = 0;
       } else {
         break;
       }
