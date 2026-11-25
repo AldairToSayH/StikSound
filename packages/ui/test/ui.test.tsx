@@ -151,7 +151,7 @@ describe("StikSoundMinimalApp UI", () => {
     render(
       <TimelineTrimBar
         hasAudio
-        durationMs={8_000}
+        durationMs={8_037}
         startMs={1_000}
         endMs={6_000}
         maxWindowMs={10_000}
@@ -169,16 +169,19 @@ describe("StikSoundMinimalApp UI", () => {
     );
 
     const slider = screen.getByTestId("trim-slider") as HTMLInputElement;
-    expect(slider.max).toBe("3000");
+    expect(slider.max).toBe("3037");
+    expect(slider.step).toBe("1");
     fireEvent.change(slider, { target: { value: "2500" } });
     expect(onChangeRange).toHaveBeenLastCalledWith(2_500, 7_500);
+    fireEvent.change(slider, { target: { value: "3037" } });
+    expect(onChangeRange).toHaveBeenLastCalledWith(3_037, 8_037);
 
     const track = screen.getByTestId("waveform-track");
     Object.defineProperty(track, "getBoundingClientRect", {
       value: () => ({ left: 0, top: 0, width: 200, height: 40, right: 200, bottom: 40 })
     });
     fireEvent.click(track, { clientX: 100 });
-    expect(onChangeRange).toHaveBeenLastCalledWith(1_500, 6_500);
+    expect(onChangeRange).toHaveBeenLastCalledWith(1_519, 6_519);
   });
 
   it("shows localized error banner when an invalid URL is submitted", async () => {

@@ -184,7 +184,7 @@ export const TimelineTrimBar: React.FC<TimelineTrimBarProps> = ({
               className="stik-trim-slider"
               min={0}
               max={maxStartMs}
-              step={50}
+              step={1}
               value={boundedStartMs}
               onChange={(e) => {
                 const nextStart = Number(e.target.value);
