@@ -9,6 +9,8 @@ import {
   extractRawAudioSpecificConfig,
   prepareAnimatedGifFrames,
   sanitizeMp4AudioChunkMeta,
+  gifFrameDelayMs,
+  resampleGifScheduleForEncoder,
   scheduleGifFramesForDuration,
   sniffImageHeader,
   trimPcmSamples
@@ -142,6 +144,50 @@ describe("packages/media-web", () => {
     expect(schedule).toHaveLength(20);
     const totalUs = schedule.reduce((sum, s) => sum + s.durationUs, 0);
     expect(totalUs).toBe(10_000_000);
+  });
+
+  it("normalizes GIF frame delays the way browsers play them in the preview", () => {
+    expect(gifFrameDelayMs(null)).toBe(100);
+    expect(gifFrameDelayMs(0)).toBe(100);
+    expect(gifFrameDelayMs(10)).toBe(100);
+    expect(gifFrameDelayMs(19.9)).toBe(100);
+    expect(gifFrameDelayMs(20)).toBe(20);
+    expect(gifFrameDelayMs(66.6)).toBe(67);
+  });
+
+  it("decodes 0 and 1 centisecond GIF delays as 100 ms (issue #3)", () => {
+    const gif = makeGif(1, 1, [
+      { width: 1, height: 1, data: D0, gce: { delayCs: 0 } },
+      { width: 1, height: 1, data: D0, gce: { delayCs: 1 } },
+      { width: 1, height: 1, data: D0, gce: { delayCs: 2 } }
+    ]);
+    expect(decodeGifFramesRgba(gif).map((f) => f.delayMs)).toEqual([100, 100, 20]);
+  });
+
+  it("resamples GIF frames to 24 fps with a keyframe at every new GIF frame (issue #3)", () => {
+    const schedule = scheduleGifFramesForDuration(
+      [
+        { frameIndex: 0, delayMs: 100 },
+        { frameIndex: 1, delayMs: 200 },
+        { frameIndex: 2, delayMs: 100 }
+      ],
+      2_000
+    );
+    const encoded = resampleGifScheduleForEncoder(schedule, 2_000);
+
+    expect(encoded).toHaveLength(48);
+    expect(encoded[0]).toMatchObject({ frameIndex: 0, timestampUs: 0, keyFrame: true });
+    const totalUs = encoded.reduce((sum, f) => sum + f.durationUs, 0);
+    expect(totalUs).toBe(2_000_000);
+    for (let i = 1; i < encoded.length; i++) {
+      expect(encoded[i]!.timestampUs).toBe(encoded[i - 1]!.timestampUs + encoded[i - 1]!.durationUs);
+      if (encoded[i]!.frameIndex !== encoded[i - 1]!.frameIndex) {
+        expect(encoded[i]!.keyFrame).toBe(true);
+      }
+    }
+    // All three GIF frames appear, and the animation loops (frame 0 returns).
+    const order = encoded.map((f) => f.frameIndex).filter((v, i, a) => i === 0 || v !== a[i - 1]);
+    expect(order.slice(0, 4)).toEqual([0, 1, 2, 0]);
   });
 
   it("trims WAV audio within 50 ms tolerance and rejects Zip-Slip (SEC-006)", async () => {

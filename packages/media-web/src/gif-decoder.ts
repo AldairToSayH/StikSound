@@ -6,6 +6,7 @@ import {
   assertGifFrameDescriptor,
   gifFrameWorkingBytes
 } from "./gif-limits";
+import { gifFrameDelayMs } from "./gif-scheduler";
 
 export interface DecodedGifFrame {
   width: number;
@@ -212,7 +213,7 @@ export function decodeGifFramesRgba(bytes: Uint8Array): DecodedGifFrame[] {
         disposalMethod = (gcePacked >> 2) & 0x07;
         transparentFlag = (gcePacked & 0x01) !== 0;
         const delayCs = readU16LE(bytes, pos + 2);
-        delayMs = Math.max(20, (delayCs === 0 ? 10 : delayCs) * 10);
+        delayMs = gifFrameDelayMs(delayCs * 10);
         transparentIndex = bytes[pos + 4] ?? 0;
         pos += 1 + blockSize;
         while (pos < bytes.byteLength) {
