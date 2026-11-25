@@ -1,7 +1,7 @@
 {
   "name": "StikSound",
   "short_name": "StikSound",
-  "description": "Ponle sonido de hasta 5 segundos a tus stickers. Todo se procesa en tu teléfono.",
+  "description": "Ponle sonido de hasta 10 segundos a tus stickers. Todo se procesa en tu dispositivo.",
   "lang": "es",
   "start_url": "./",
   "scope": "./",
