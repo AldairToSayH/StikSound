@@ -1,3 +1,5 @@
+import { LIMITS } from "./limits";
+
 export type ImageFormat = "png" | "jpeg" | "webp" | "gif";
 export type AudioFormat = "mp3" | "wav" | "ogg" | "m4a" | "aac";
 export type ExportProfileId =
@@ -205,7 +207,7 @@ export const EXPORT_PROFILES: Record<ExportProfileId, ExportProfileDefinition> =
     id: "video-mp4",
     enabled: true,
     requiresAudio: true,
-    maxAudioMs: 5000,
+    maxAudioMs: LIMITS.DEFAULT_VIDEO_MAX_AUDIO_MS,
     extension: "mp4",
     mimeType: "video/mp4"
   },
@@ -213,7 +215,7 @@ export const EXPORT_PROFILES: Record<ExportProfileId, ExportProfileDefinition> =
     id: "video-webm-alpha",
     enabled: true,
     requiresAudio: true,
-    maxAudioMs: 5000,
+    maxAudioMs: LIMITS.DEFAULT_VIDEO_MAX_AUDIO_MS,
     extension: "webm",
     mimeType: "video/webm"
   },
@@ -221,7 +223,7 @@ export const EXPORT_PROFILES: Record<ExportProfileId, ExportProfileDefinition> =
     id: "sound-bundle",
     enabled: true,
     requiresAudio: true,
-    maxAudioMs: 5000,
+    maxAudioMs: LIMITS.DEFAULT_BUNDLE_MAX_AUDIO_MS,
     extension: "zip",
     mimeType: "application/zip"
   },
@@ -229,7 +231,7 @@ export const EXPORT_PROFILES: Record<ExportProfileId, ExportProfileDefinition> =
     id: "standard-webp",
     enabled: true,
     requiresAudio: false,
-    maxAudioMs: 5000,
+    maxAudioMs: LIMITS.DEFAULT_VIDEO_MAX_AUDIO_MS,
     extension: "webp",
     mimeType: "image/webp"
   },
@@ -237,7 +239,7 @@ export const EXPORT_PROFILES: Record<ExportProfileId, ExportProfileDefinition> =
     id: "native-sound-sticker",
     enabled: false,
     requiresAudio: true,
-    maxAudioMs: 5000,
+    maxAudioMs: LIMITS.DEFAULT_VIDEO_MAX_AUDIO_MS,
     extension: "webp",
     mimeType: "application/octet-stream"
   }

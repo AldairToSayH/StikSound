@@ -145,7 +145,7 @@ fn cmd_probe_audio(bytes: Vec<u8>) -> Result<AudioProbeInfo, String> {
 
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
-fn cmd_render_video_5s(
+fn cmd_render_video(
     app: tauri::AppHandle,
     sticker_bytes: Vec<u8>,
     sticker_format: String,
@@ -309,7 +309,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             cmd_probe_image,
             cmd_probe_audio,
-            cmd_render_video_5s,
+            cmd_render_video,
             cmd_save_export_to_downloads,
             cmd_copy_artifact_to_clipboard,
             cmd_fetch_myinstants

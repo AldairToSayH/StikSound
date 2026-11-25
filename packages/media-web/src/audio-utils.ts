@@ -56,7 +56,10 @@ export function trimPcmSamples(
   }
   const selectedMs = endMs - startMs;
   if (selectedMs < LIMITS.MIN_TRIM_DURATION_MS || selectedMs > maxAllowedMs) {
-    throw new StikSoundError("trim-out-of-range", "Selection must be between 100 ms and 5000 ms.");
+    throw new StikSoundError(
+      "trim-out-of-range",
+      `Selection must be between ${LIMITS.MIN_TRIM_DURATION_MS} ms and ${maxAllowedMs} ms.`
+    );
   }
 
   const startSample = Math.max(0, Math.floor((startMs / 1000) * sampleRate));

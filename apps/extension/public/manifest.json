@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "StikSound",
   "version": "1.0.0",
-  "description": "Attach a 5-second sound clip to an existing sticker locally and export a video.",
+  "description": "Attach a sound clip of up to 10 seconds to an existing sticker locally and export a video.",
   "icons": {
     "32": "icons/32x32.png",
     "128": "icons/128x128.png"

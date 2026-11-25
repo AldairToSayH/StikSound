@@ -12,7 +12,7 @@ use thiserror::Error;
 pub const MAX_AUDIO_BYTES: usize = 25 * 1024 * 1024;
 pub const MAX_AUDIO_DURATION_MS: u32 = 180_000;
 pub const MIN_TRIM_DURATION_MS: u32 = 100;
-pub const DEFAULT_VIDEO_MAX_MS: u32 = 5_000;
+pub const DEFAULT_VIDEO_MAX_MS: u32 = 10_000;
 pub const WAVEFORM_BUCKETS: usize = 1024;
 pub const TARGET_SAMPLE_RATE: u32 = 48_000;
 
@@ -365,34 +365,36 @@ mod tests {
     }
 
     #[test]
-    fn tc003_tc007_trims_to_5s_and_computes_1024_peaks() {
-        let wav = make_sine_wav(8000, 48000);
+    fn tc003_tc007_trims_to_10s_and_computes_1024_peaks() {
+        let wav = make_sine_wav(12_000, 48000);
         let probe = probe_audio(&wav).unwrap();
         assert_eq!(probe.format, AudioContainerFormat::Wav);
-        assert_eq!(probe.duration_ms, 8000);
+        assert_eq!(probe.duration_ms, 12_000);
 
         let peaks = compute_waveform_peaks(&wav).unwrap();
         assert_eq!(peaks.buckets, 1024);
         assert_eq!(peaks.mins.len(), 1024);
         assert_eq!(peaks.maxs.len(), 1024);
 
-        let trimmed_5s = render_trimmed_pcm_48k(&wav, 0, 5000, 1.0, DEFAULT_VIDEO_MAX_MS).unwrap();
-        assert!((i64::from(trimmed_5s.duration_ms) - 5000).abs() <= 50);
+        let trimmed_10s =
+            render_trimmed_pcm_48k(&wav, 0, 10_000, 1.0, DEFAULT_VIDEO_MAX_MS).unwrap();
+        assert!((i64::from(trimmed_10s.duration_ms) - 10_000).abs() <= 50);
 
-        let trimmed_mid = render_trimmed_pcm_48k(&wav, 1500, 4200, 1.0, DEFAULT_VIDEO_MAX_MS).unwrap();
+        let trimmed_mid =
+            render_trimmed_pcm_48k(&wav, 1500, 4200, 1.0, DEFAULT_VIDEO_MAX_MS).unwrap();
         assert!((i64::from(trimmed_mid.duration_ms) - 2700).abs() <= 50);
     }
 
     #[test]
-    fn tc006_and_tc014_reject_corrupt_and_over_5s_trim() {
+    fn tc006_and_tc014_reject_corrupt_and_over_10s_trim() {
         let corrupt = b"not valid mp3 or wav bytes";
         assert!(matches!(
             probe_audio(corrupt),
             Err(AudioEngineError::UnsupportedAudio(_))
         ));
 
-        let wav = make_sine_wav(8000, 48000);
-        let err = render_trimmed_pcm_48k(&wav, 0, 6000, 1.0, DEFAULT_VIDEO_MAX_MS).unwrap_err();
+        let wav = make_sine_wav(12_000, 48000);
+        let err = render_trimmed_pcm_48k(&wav, 0, 11_000, 1.0, DEFAULT_VIDEO_MAX_MS).unwrap_err();
         assert!(matches!(err, AudioEngineError::TrimOutOfRange(_)));
     }
 }

@@ -12,7 +12,7 @@ export interface ScheduledVideoFrame {
 }
 
 /**
- * Loops decoded GIF frames cleanly to cover the target audio duration (capped at 5000 ms).
+ * Loops decoded GIF frames cleanly to cover the target audio duration (capped by the active export limit).
  */
 export function scheduleGifFramesForDuration(
   frames: readonly GifFrameTiming[],

@@ -7,8 +7,8 @@ export const LIMITS = {
   MAX_IMAGE_DIMENSION: 8000, // 8000 px max width or height
   MAX_PACKAGE_BYTES: 100 * 1024 * 1024, // 100 MB uncompressed (NFR-014)
   MAX_PACKAGE_FILES: 32, // (NFR-014)
-  DEFAULT_VIDEO_MAX_AUDIO_MS: 5000, // 5-second video sticker audio cap
-  DEFAULT_BUNDLE_MAX_AUDIO_MS: 5000, // Aligned to 5s framing rule
+  DEFAULT_VIDEO_MAX_AUDIO_MS: 10_000, // 10-second video sticker audio cap
+  DEFAULT_BUNDLE_MAX_AUDIO_MS: 10_000, // Aligned to 10s framing rule
   MIN_TRIM_DURATION_MS: 100,
   DURATION_TOLERANCE_MS: 50,
   STICKER_DIMENSION_PX: 512,

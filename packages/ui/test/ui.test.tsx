@@ -3,7 +3,7 @@ import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { StikSoundError, type MediaEngine, type SoundProvider } from "@stiksound/core";
-import { StikSoundMinimalApp } from "../src/index";
+import { StikSoundMinimalApp, TimelineTrimBar } from "../src/index";
 
 afterEach(() => {
   cleanup();
@@ -121,7 +121,7 @@ describe("StikSoundMinimalApp UI", () => {
     fireEvent.change(urlInput, { target: { value: "https://www.myinstants.com/en/instant/test/" } });
     fireEvent.submit(urlInput.closest("form")!);
 
-    await waitFor(() => expect(screen.getByTestId("duration-readout").textContent).toContain("5.0s / 5.0s"));
+    await waitFor(() => expect(screen.getByTestId("duration-readout").textContent).toContain("10.0s / 10.0s"));
     expect(okArrowBtn.disabled).toBe(false);
     expect(downloadBtn.disabled).toBe(false);
 
@@ -144,6 +144,44 @@ describe("StikSoundMinimalApp UI", () => {
     await waitFor(() => expect(screen.getByTestId("myinstants-url-input")).toBeTruthy());
     expect(okArrowBtn.disabled).toBe(true);
     expect(container.querySelector('[data-testid="sticker-loaded-badge"]')).toBeNull();
+  });
+
+  it("preserves a shorter saved trim when repositioning audio under the 10s cap", () => {
+    const onChangeRange = vi.fn();
+    render(
+      <TimelineTrimBar
+        hasAudio
+        durationMs={8_037}
+        startMs={1_000}
+        endMs={6_000}
+        maxWindowMs={10_000}
+        peaks={null}
+        isPlaying={false}
+        isBusy={false}
+        urlInput=""
+        onUrlInputChange={vi.fn()}
+        onSubmitUrl={vi.fn()}
+        onSelectAudioFile={vi.fn()}
+        onChangeRange={onChangeRange}
+        onTogglePlay={vi.fn()}
+        labels={{ placeholder: "Audio", pickBtn: "Audio", play: "Play", stop: "Stop" }}
+      />
+    );
+
+    const slider = screen.getByTestId("trim-slider") as HTMLInputElement;
+    expect(slider.max).toBe("3037");
+    expect(slider.step).toBe("1");
+    fireEvent.change(slider, { target: { value: "2500" } });
+    expect(onChangeRange).toHaveBeenLastCalledWith(2_500, 7_500);
+    fireEvent.change(slider, { target: { value: "3037" } });
+    expect(onChangeRange).toHaveBeenLastCalledWith(3_037, 8_037);
+
+    const track = screen.getByTestId("waveform-track");
+    Object.defineProperty(track, "getBoundingClientRect", {
+      value: () => ({ left: 0, top: 0, width: 200, height: 40, right: 200, bottom: 40 })
+    });
+    fireEvent.click(track, { clientX: 100 });
+    expect(onChangeRange).toHaveBeenLastCalledWith(1_519, 6_519);
   });
 
   it("shows localized error banner when an invalid URL is submitted", async () => {
