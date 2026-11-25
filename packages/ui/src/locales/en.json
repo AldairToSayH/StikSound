@@ -23,6 +23,7 @@
   "audioPickBtn": "Audio",
   "playPreview": "Play preview",
   "stopPreview": "Stop",
+  "maxDurationAria": "Max duration",
   "copiedReadyToast": "Copied to clipboard! Paste (Ctrl+V / Cmd+V) in WhatsApp stickers.",
   "copyAgainBtn": "Copy (Ctrl+V)",
   "downloadBtnLabel": "Download",

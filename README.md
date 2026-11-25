@@ -4,14 +4,14 @@
 
 # StikSound
 
-**Crea stickers con sonido de hasta 10 segundos a partir de un PNG, JPG, WebP o GIF animado: pega tu sticker, elige un audio local o un enlace de MyInstants, recorta el fragmento exacto y exporta todo localmente.**
+**Crea stickers con sonido de hasta 5 o 10 segundos (con switch en pantalla) a partir de un PNG, JPG, WebP o GIF animado: pega tu sticker, elige un audio local o un enlace de MyInstants, recorta el fragmento exacto y exporta todo localmente.**
 
-[![Release](https://img.shields.io/github/v/release/jorgeluismorales/StikSound?style=flat-square&label=Download&color=25D366)](https://github.com/jorgeluismorales/StikSound/releases/latest)
+[![Release](https://img.shields.io/github/v/release/SilverFeit/StikSound?style=flat-square&label=Download&color=25D366)](https://github.com/SilverFeit/StikSound/releases/latest)
 [![Platforms](https://img.shields.io/badge/Platforms-Windows%20%7C%20macOS%20%7C%20Chrome-25D366?style=flat-square)](#instalación)
 [![Local Processing](https://img.shields.io/badge/Procesamiento-100%25%20local-10b981?style=flat-square)](#privacidad-y-seguridad)
 [![License](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-6366f1?style=flat-square)](LICENSE-MIT)
 
-[**Descargar**](https://github.com/jorgeluismorales/StikSound/releases/latest) · [**Guía de uso**](#guía-de-uso-paso-a-paso) · [**Cómo funciona internamente**](#cómo-funciona-internamente) · [**Desarrollo**](#desarrollo)
+[**Descargar**](https://github.com/SilverFeit/StikSound/releases/latest) · [**Guía de uso**](#guía-de-uso-paso-a-paso) · [**Cómo funciona internamente**](#cómo-funciona-internamente) · [**Desarrollo**](#desarrollo)
 
 </div>
 
@@ -27,7 +27,7 @@ Concretamente permite:
 - Trabajar con **GIF animados**, reproduciéndolos en bucle durante el fragmento exportado.
 - Agregar audio desde un archivo local **MP3, WAV, OGG, M4A o AAC**.
 - Pegar un enlace de **MyInstants** y descargar ese sonido de forma validada.
-- Seleccionar un fragmento de audio de **0,1 a 10 segundos**.
+- Seleccionar un fragmento de audio de **0,1 a 5 o 10 segundos** usando el selector integrado `5s | 10s`.
 - Exportar un **MP4 compatible**, un **WebM con transparencia**, un **paquete ZIP** o un **WebP estático**.
 - Guardar y reabrir proyectos `.stiksound.zip` con la imagen, el audio y la configuración del recorte.
 
@@ -260,7 +260,7 @@ La idea principal es que la UI no contiene reglas de negocio: React llama a caso
 
 ### Windows y macOS
 
-1. Abre [**Releases**](https://github.com/jorgeluismorales/StikSound/releases/latest).
+1. Abre [**Releases**](https://github.com/SilverFeit/StikSound/releases/latest).
 2. Descarga el instalador o ejecutable para tu plataforma:
    - Windows: archivo `windows-x64`.
    - macOS: archivo `macos-universal`.
@@ -270,7 +270,7 @@ En macOS, si aparece el aviso de desarrollador no verificado, haz clic derecho s
 
 ### Extensión de Chrome, Edge o Brave
 
-1. Descarga `StikSound-*-chrome-extension.zip` desde [**Releases**](https://github.com/jorgeluismorales/StikSound/releases/latest).
+1. Descarga `StikSound-*-chrome-extension.zip` desde [**Releases**](https://github.com/SilverFeit/StikSound/releases/latest).
 2. Descomprímelo en una carpeta permanente.
 3. Abre `chrome://extensions/`.
 4. Activa **Modo de desarrollador**.
@@ -310,7 +310,7 @@ En macOS, si aparece el aviso de desarrollador no verificado, haz clic derecho s
 ### Instalar dependencias
 
 ```bash
-git clone https://github.com/jorgeluismorales/StikSound.git
+git clone https://github.com/SilverFeit/StikSound.git
 cd StikSound
 npm install
 ```

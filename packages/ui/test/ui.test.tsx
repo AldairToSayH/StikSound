@@ -208,4 +208,81 @@ describe("StikSoundMinimalApp UI", () => {
 
     await waitFor(() => expect(screen.getByTestId("error-banner").textContent).toContain("MyInstants"));
   });
+
+  it("switches max duration between 5s and 10s, clamps/expands selection, and updates exported filename", async () => {
+    const baseEngine = createTestEngine();
+    const longEngine = {
+      ...baseEngine,
+      probeAudio: async (bytes: Uint8Array) => ({
+        ...(await baseEngine.probeAudio(bytes)),
+        duration_ms: 15_000
+      })
+    };
+    const saved: Array<{ fileName: string }> = [];
+    const provider: SoundProvider = {
+      id: "myinstants",
+      canResolve: () => true,
+      resolve: async (url) => ({
+        page_url: url,
+        media_url: "https://www.myinstants.com/media/sounds/long.mp3",
+        title: "Long Clip",
+        bytes: new Uint8Array([1, 2, 3, 4])
+      })
+    };
+
+    render(
+      <StikSoundMinimalApp
+        engine={longEngine}
+        providers={[provider]}
+        shell={{
+          saveArtifact: async (artifact) => {
+            saved.push({ fileName: artifact.fileName });
+          }
+        }}
+        initialLocale="es"
+      />
+    );
+
+    // Load a valid PNG sticker via file input inside the app shell
+    const appShell = screen.getByTestId("stiksound-minimal-app");
+    const stickerInput = appShell.querySelector('input[accept*="image/png"]') as HTMLInputElement;
+    const pngFile = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], "ok.png", {
+      type: "image/png"
+    });
+    Object.defineProperty(pngFile, "arrayBuffer", {
+      value: async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).buffer
+    });
+    fireEvent.change(stickerInput, { target: { files: [pngFile] } });
+    await waitFor(() => expect(screen.getByTestId("sticker-loaded-badge")).toBeTruthy());
+
+    // Switch to 5s before importing audio
+    fireEvent.click(screen.getByTestId("max-duration-5s"));
+    expect(screen.getByTestId("max-duration-5s").getAttribute("aria-pressed")).toBe("true");
+
+    const urlInput = screen.getByTestId("myinstants-url-input");
+    fireEvent.change(urlInput, { target: { value: "https://www.myinstants.com/en/instant/test-1/" } });
+    fireEvent.submit(urlInput.closest("form")!);
+
+    await waitFor(() => expect(screen.getByTestId("duration-readout").textContent).toBe("5.0s / 5.0s"));
+
+    // Download MP4 at 5s cap
+    fireEvent.click(screen.getByTestId("download-btn"));
+    fireEvent.click(screen.getByTestId("download-fmt-video-mp4"));
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect(saved[0]!.fileName).toMatch(/-5s\.mp4$/);
+
+    // Switch to 10s -> selection expands automatically to 10.0s
+    fireEvent.click(screen.getByTestId("max-duration-10s"));
+    await waitFor(() => expect(screen.getByTestId("duration-readout").textContent).toBe("10.0s / 10.0s"));
+
+    // Download MP4 at 10s cap
+    fireEvent.click(screen.getByTestId("download-btn"));
+    fireEvent.click(screen.getByTestId("download-fmt-video-mp4"));
+    await waitFor(() => expect(saved).toHaveLength(2));
+    expect(saved[1]!.fileName).toMatch(/-10s\.mp4$/);
+
+    // Switch back to 5s -> selection clamps back to 5.0s
+    fireEvent.click(screen.getByTestId("max-duration-5s"));
+    await waitFor(() => expect(screen.getByTestId("duration-readout").textContent).toBe("5.0s / 5.0s"));
+  });
 });

@@ -353,6 +353,39 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
+.stik-duration-switch {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.stik-duration-switch-btn {
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  border-radius: 6px;
+  padding: 3px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.stik-duration-switch-btn.active {
+  background: var(--accent);
+  color: #08180e;
+}
+
+.stik-duration-switch-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .stik-toast {
   font-size: 12px;
   padding: 8px 10px;

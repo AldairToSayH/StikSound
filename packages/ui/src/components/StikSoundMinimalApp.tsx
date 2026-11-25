@@ -69,6 +69,7 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
   const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [readyArtifact, setReadyArtifact] = useState<ExportArtifact | null>(null);
+  const [maxDurationMs, setMaxDurationMs] = useState<5000 | 10000>(10_000);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -82,6 +83,10 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
   const audio = project.manifest.audios[0];
   const assoc = project.manifest.associations[0];
   const activeProfile = project.manifest.export.profile;
+  const profileDef = EXPORT_PROFILES[activeProfile];
+  const effectiveMaxAudioMs = profileDef.requiresAudio
+    ? Math.min(maxDurationMs, profileDef.maxAudioMs)
+    : maxDurationMs;
 
   const stickerPreviewUrl = useMemo(() => {
     if (!sticker) return null;
@@ -165,7 +170,13 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
       setReadyArtifact(null);
       setDownloadMenuOpen(false);
       try {
-        const next = await controller.importAudioFile(project, bytes, name);
+        const next = await controller.importAudioFile(
+          project,
+          bytes,
+          name,
+          { type: "local" },
+          effectiveMaxAudioMs
+        );
         setProject(next);
       } catch (err) {
         handleError(err);
@@ -173,7 +184,7 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
         setIsBusy(false);
       }
     },
-    [controller, project, handleError, stopPlayback]
+    [controller, project, effectiveMaxAudioMs, handleError, stopPlayback]
   );
 
   const importMyInstantsUrl = useCallback(
@@ -185,7 +196,7 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
       setReadyArtifact(null);
       setDownloadMenuOpen(false);
       try {
-        const next = await controller.importAudioUrl(project, rawUrl);
+        const next = await controller.importAudioUrl(project, rawUrl, effectiveMaxAudioMs);
         setProject(next);
         setUrlInput("");
       } catch (err) {
@@ -194,7 +205,7 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
         setIsBusy(false);
       }
     },
-    [controller, project, handleError, stopPlayback]
+    [controller, project, effectiveMaxAudioMs, handleError, stopPlayback]
   );
 
   const handleGlobalPaste = useCallback(
@@ -271,18 +282,19 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
     setStatusMessage(null);
   };
 
-  const profileDef = EXPORT_PROFILES[activeProfile];
   const trimValid =
     !profileDef.requiresAudio ||
     (assoc !== undefined &&
       assoc.end_ms - assoc.start_ms >= LIMITS.MIN_TRIM_DURATION_MS &&
-      assoc.end_ms - assoc.start_ms <= profileDef.maxAudioMs);
+      assoc.end_ms - assoc.start_ms <= effectiveMaxAudioMs);
   const canExport = Boolean(sticker) && (!profileDef.requiresAudio || Boolean(audio)) && trimValid && !isBusy;
 
   let exportDisabledReason = copy.exportTooltip;
   if (!sticker) exportDisabledReason = copy.exportDisabledMissingSticker;
   else if (profileDef.requiresAudio && !audio) exportDisabledReason = copy.exportDisabledMissingAudio;
-  else if (!trimValid) exportDisabledReason = copy.exportDisabledTrim;
+  else if (!trimValid) {
+    exportDisabledReason = copy.exportDisabledTrim.replace("10.0", (effectiveMaxAudioMs / 1000).toFixed(1));
+  }
 
   const copyArtifactNow = async (artifact: ExportArtifact) => {
     if (shell.copyArtifactToClipboard) {
@@ -313,7 +325,8 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
     try {
       const compatibleProfile: ExportProfileId =
         activeProfile === "video-webm-alpha" ? "video-webm-alpha" : "video-mp4";
-      const artifact = readyArtifact ?? (await controller.exportProject(project, compatibleProfile));
+      const artifact =
+        readyArtifact ?? (await controller.exportProject(project, compatibleProfile, maxDurationMs));
       setReadyArtifact(artifact);
       await copyArtifactNow(artifact);
     } catch (err) {
@@ -336,7 +349,7 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
     setErrorMessage(null);
     setStatusMessage(null);
     try {
-      const artifact = await controller.exportProject(project, formatProfile);
+      const artifact = await controller.exportProject(project, formatProfile, maxDurationMs);
       await shell.saveArtifact(artifact);
       setStatusMessage(
         artifact.profile === "sound-bundle" ? copy.exportSuccessBundle : copy.exportSuccessVideo
@@ -351,10 +364,39 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
   const handleRangeChange = (startMs: number, endMs: number) => {
     setReadyArtifact(null);
     try {
-      setProject((prev) => controller.updateAudioEdit(prev, { start_ms: startMs, end_ms: endMs }));
+      setProject((prev) =>
+        controller.updateAudioEdit(prev, { start_ms: startMs, end_ms: endMs }, effectiveMaxAudioMs)
+      );
       setErrorMessage(null);
     } catch (err) {
       handleError(err);
+    }
+  };
+
+  const handleMaxDurationChange = (nextMax: 5000 | 10000) => {
+    if (nextMax === maxDurationMs) return;
+    stopPlayback();
+    setReadyArtifact(null);
+    setMaxDurationMs(nextMax);
+    setErrorMessage(null);
+    if (audio && assoc) {
+      const selected = assoc.end_ms - assoc.start_ms;
+      if (nextMax < selected) {
+        const nextEnd = Math.min(audio.duration_ms, assoc.start_ms + nextMax);
+        setProject((prev) =>
+          controller.updateAudioEdit(prev, { start_ms: assoc.start_ms, end_ms: nextEnd }, nextMax)
+        );
+      } else if (nextMax === 10_000 && selected === 5_000 && audio.duration_ms > 5_000) {
+        const targetWindow = Math.min(nextMax, audio.duration_ms);
+        const nextStart = Math.max(0, Math.min(assoc.start_ms, audio.duration_ms - targetWindow));
+        setProject((prev) =>
+          controller.updateAudioEdit(
+            prev,
+            { start_ms: nextStart, end_ms: nextStart + targetWindow },
+            nextMax
+          )
+        );
+      }
     }
   };
 
@@ -504,7 +546,12 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
                   const zipBytes = await shell.openProjectZip();
                   if (zipBytes) {
                     setReadyArtifact(null);
-                    setProject(await controller.openProject(zipBytes));
+                    const opened = await controller.openProject(zipBytes);
+                    const openedAssoc = opened.manifest.associations[0];
+                    if (openedAssoc && openedAssoc.end_ms - openedAssoc.start_ms > 5_000) {
+                      setMaxDurationMs(10_000);
+                    }
+                    setProject(opened);
                   }
                 } else {
                   projectZipInputRef.current?.click();
@@ -729,7 +776,7 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
         durationMs={audio?.duration_ms ?? 0}
         startMs={assoc?.start_ms ?? 0}
         endMs={assoc?.end_ms ?? 0}
-        maxWindowMs={profileDef.maxAudioMs}
+        maxWindowMs={effectiveMaxAudioMs}
         peaks={project.waveformPeaks}
         isPlaying={isPlaying}
         isBusy={isBusy}
@@ -738,12 +785,14 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
         onSubmitUrl={importMyInstantsUrl}
         onSelectAudioFile={async (f) => importAudioBytes(new Uint8Array(await f.arrayBuffer()), f.name)}
         onChangeRange={handleRangeChange}
+        onChangeMaxWindowMs={handleMaxDurationChange}
         onTogglePlay={togglePlay}
         labels={{
           placeholder: copy.audioInputPlaceholder,
           pickBtn: copy.audioPickBtn,
           play: copy.playPreview,
-          stop: copy.stopPreview
+          stop: copy.stopPreview,
+          maxDurationAria: copy.maxDurationAria
         }}
       />
 

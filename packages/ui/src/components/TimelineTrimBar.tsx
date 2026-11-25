@@ -15,12 +15,14 @@ export interface TimelineTrimBarProps {
   onSubmitUrl: (url: string) => void;
   onSelectAudioFile: (file: File) => void;
   onChangeRange: (startMs: number, endMs: number) => void;
+  onChangeMaxWindowMs?: (maxMs: 5000 | 10000) => void;
   onTogglePlay: () => void;
   labels: {
     placeholder: string;
     pickBtn: string;
     play: string;
     stop: string;
+    maxDurationAria?: string;
   };
 }
 
@@ -42,6 +44,7 @@ export const TimelineTrimBar: React.FC<TimelineTrimBarProps> = ({
   onSubmitUrl,
   onSelectAudioFile,
   onChangeRange,
+  onChangeMaxWindowMs,
   onTogglePlay,
   labels
 }) => {
@@ -80,6 +83,36 @@ export const TimelineTrimBar: React.FC<TimelineTrimBarProps> = ({
     const clickedMs = Math.round(ratio * durationMs);
     const nextStart = Math.max(0, Math.min(maxStartMs, Math.round(clickedMs - activeWindowMs / 2)));
     onChangeRange(nextStart, nextStart + activeWindowMs);
+  };
+
+  const renderDurationSwitch = () => {
+    if (!onChangeMaxWindowMs) return null;
+    return (
+      <div
+        className="stik-duration-switch"
+        data-testid="max-duration-switch"
+        role="group"
+        aria-label={labels.maxDurationAria ?? "Max duration"}
+      >
+        {LIMITS.AUDIO_DURATION_PRESETS.map((presetMs) => {
+          const active = maxWindowMs === presetMs;
+          const labelSec = `${presetMs / 1000}s`;
+          return (
+            <button
+              key={presetMs}
+              type="button"
+              data-testid={`max-duration-${labelSec}`}
+              aria-pressed={active}
+              className={`stik-duration-switch-btn ${active ? "active" : ""}`}
+              disabled={isBusy}
+              onClick={() => onChangeMaxWindowMs(presetMs)}
+            >
+              {labelSec}
+            </button>
+          );
+        })}
+      </div>
+    );
   };
 
   return (
@@ -138,6 +171,7 @@ export const TimelineTrimBar: React.FC<TimelineTrimBarProps> = ({
           >
             {labels.pickBtn}
           </button>
+          {renderDurationSwitch()}
         </form>
       ) : (
         <div className="stik-timeline-active">
@@ -196,6 +230,7 @@ export const TimelineTrimBar: React.FC<TimelineTrimBarProps> = ({
           <span data-testid="duration-readout" className="stik-duration-pill">
             {formatSec(selectedMs)} / {formatSec(maxWindowMs)}
           </span>
+          {renderDurationSwitch()}
         </div>
       )}
     </div>

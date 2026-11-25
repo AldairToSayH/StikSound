@@ -171,11 +171,19 @@ export class ProjectController {
     };
   }
 
+  private resolveEffectiveMaxAudioMs(profileMaxMs: number, overrideMaxMs?: number): number {
+    if (overrideMaxMs === undefined || !Number.isFinite(overrideMaxMs)) {
+      return profileMaxMs;
+    }
+    return Math.max(LIMITS.MIN_TRIM_DURATION_MS, Math.min(Math.round(overrideMaxMs), profileMaxMs));
+  }
+
   public async importAudioFile(
     state: ProjectWorkspaceState,
     bytes: Uint8Array,
     sourceName: string,
-    source: AudioSource = { type: "local" }
+    source: AudioSource = { type: "local" },
+    maxAudioMsOverride?: number
   ): Promise<ProjectWorkspaceState> {
     if (bytes.byteLength === 0) {
       throw new StikSoundError("unsupported-audio", "Empty audio payload.");
@@ -212,7 +220,10 @@ export class ProjectController {
     }
     nextAssets.set(file, new Uint8Array(bytes));
 
-    const maxAudioMs = EXPORT_PROFILES[state.manifest.export.profile].maxAudioMs;
+    const maxAudioMs = this.resolveEffectiveMaxAudioMs(
+      EXPORT_PROFILES[state.manifest.export.profile].maxAudioMs,
+      maxAudioMsOverride
+    );
     const defaultTrim = defaultTrimForDuration(audio.duration_ms, maxAudioMs);
     const existingSticker = state.manifest.stickers[0];
     const nextAssociations: Association[] = existingSticker
@@ -239,24 +250,35 @@ export class ProjectController {
     };
   }
 
-  public async importAudioUrl(state: ProjectWorkspaceState, rawUrl: string): Promise<ProjectWorkspaceState> {
+  public async importAudioUrl(
+    state: ProjectWorkspaceState,
+    rawUrl: string,
+    maxAudioMsOverride?: number
+  ): Promise<ProjectWorkspaceState> {
     const provider = this.providers.find((p) => p.canResolve(rawUrl));
     if (!provider) {
       throw new StikSoundError("url-rejected", `No allowlisted provider handles URL: ${rawUrl}`);
     }
     const resolved = await provider.resolve(rawUrl);
     const sourceName = resolved.title ?? resolved.media_url.split("/").pop() ?? "sound.mp3";
-    return this.importAudioFile(state, resolved.bytes, sourceName, {
-      type: "myinstants",
-      page_url: resolved.page_url,
-      media_url: resolved.media_url,
-      title: resolved.title
-    });
+    return this.importAudioFile(
+      state,
+      resolved.bytes,
+      sourceName,
+      {
+        type: "myinstants",
+        page_url: resolved.page_url,
+        media_url: resolved.media_url,
+        title: resolved.title
+      },
+      maxAudioMsOverride
+    );
   }
 
   public updateAudioEdit(
     state: ProjectWorkspaceState,
-    patch: Partial<{ start_ms: number; end_ms: number; volume: number; fade_in_ms: number; fade_out_ms: number }>
+    patch: Partial<{ start_ms: number; end_ms: number; volume: number; fade_in_ms: number; fade_out_ms: number }>,
+    maxAudioMsOverride?: number
   ): ProjectWorkspaceState {
     const audio = state.manifest.audios[0];
     const current = state.manifest.associations[0];
@@ -273,7 +295,10 @@ export class ProjectController {
       fade_out_ms: patch.fade_out_ms ?? current.fade_out_ms
     };
 
-    const maxAudioMs = EXPORT_PROFILES[state.manifest.export.profile].maxAudioMs;
+    const maxAudioMs = this.resolveEffectiveMaxAudioMs(
+      EXPORT_PROFILES[state.manifest.export.profile].maxAudioMs,
+      maxAudioMsOverride
+    );
     validateAudioTrim(updated, audio.duration_ms, maxAudioMs);
 
     return {
@@ -312,14 +337,18 @@ export class ProjectController {
   public associate(
     state: ProjectWorkspaceState,
     stickerId: string,
-    audioId: string
+    audioId: string,
+    maxAudioMsOverride?: number
   ): ProjectWorkspaceState {
     const sticker = state.manifest.stickers.find((s) => s.id === stickerId);
     const audio = state.manifest.audios.find((a) => a.id === audioId);
     if (!sticker || !audio) {
       throw new StikSoundError("package-invalid", "Cannot associate missing sticker or audio.");
     }
-    const maxAudioMs = EXPORT_PROFILES[state.manifest.export.profile].maxAudioMs;
+    const maxAudioMs = this.resolveEffectiveMaxAudioMs(
+      EXPORT_PROFILES[state.manifest.export.profile].maxAudioMs,
+      maxAudioMsOverride
+    );
     const defaultTrim = defaultTrimForDuration(audio.duration_ms, maxAudioMs);
     const assoc: Association = {
       id: generateAssetId("asc"),
@@ -450,7 +479,8 @@ export class ProjectController {
 
   public async exportProject(
     state: ProjectWorkspaceState,
-    overrideProfile?: ExportProfileId
+    overrideProfile?: ExportProfileId,
+    maxAudioMsOverride?: number
   ): Promise<ExportArtifact> {
     const profileId = overrideProfile ?? state.manifest.export.profile;
     if (profileId === "native-sound-sticker") {
@@ -498,7 +528,8 @@ export class ProjectController {
       throw new StikSoundError("package-invalid", "Audio asset missing from workspace.");
     }
 
-    validateAudioTrim(assoc, audio.duration_ms, profile.maxAudioMs);
+    const maxAudioMs = this.resolveEffectiveMaxAudioMs(profile.maxAudioMs, maxAudioMsOverride);
+    validateAudioTrim(assoc, audio.duration_ms, maxAudioMs);
     const expectedDurationMs = assoc.end_ms - assoc.start_ms;
 
     if (profileId === "sound-bundle") {
@@ -536,7 +567,7 @@ export class ProjectController {
           limits: {
             sticker_px: 512,
             max_static_bytes: 102400,
-            max_audio_ms: profile.maxAudioMs
+            max_audio_ms: maxAudioMs
           },
           whatsapp_native: false
         }
@@ -578,9 +609,10 @@ export class ProjectController {
       throw new StikSoundError("encode-failed", "Rendered video duration outside 50 ms tolerance.");
     }
 
+    const durationSuffix = `${Math.round(maxAudioMs / 1000)}s`;
     return {
       profile: profileId,
-      fileName: `${safeName}-10s.${videoResult.extension}`,
+      fileName: `${safeName}-${durationSuffix}.${videoResult.extension}`,
       mimeType: videoResult.mimeType,
       bytes: videoResult.bytes,
       durationMs: videoResult.durationMs

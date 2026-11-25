@@ -237,4 +237,26 @@ describe("packages/core domain and use cases", () => {
       outputSize: 512
     });
   });
+
+  it("supports configurable 5s and 10s max audio caps across import, edit, and export", async () => {
+    const ctrl = new ProjectController(makeFakeEngine());
+    let project = createProject("SwitchCap");
+    project = await ctrl.importSticker(project, new Uint8Array([0x89, 0x50, 0x4e, 0x47]), "ok.png");
+    project = await ctrl.importAudioFile(project, new Uint8Array([1, 2, 3, 4]), "30s.mp3", { type: "local" }, 5_000);
+
+    expect(project.manifest.associations[0]!.start_ms).toBe(0);
+    expect(project.manifest.associations[0]!.end_ms).toBe(5_000);
+    expect(() => ctrl.updateAudioEdit(project, { start_ms: 0, end_ms: 5_001 }, 5_000)).toThrowError(
+      /trim-out-of-range/
+    );
+
+    const mp4Five = await ctrl.exportProject(project, "video-mp4", 5_000);
+    expect(mp4Five.fileName).toBe("switchcap-5s.mp4");
+    expect(mp4Five.durationMs).toBe(5_000);
+
+    project = ctrl.updateAudioEdit(project, { start_ms: 0, end_ms: 10_000 }, 10_000);
+    const mp4Ten = await ctrl.exportProject(project, "video-mp4", 10_000);
+    expect(mp4Ten.fileName).toBe("switchcap-10s.mp4");
+    expect(mp4Ten.durationMs).toBe(10_000);
+  });
 });
