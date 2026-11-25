@@ -558,7 +558,7 @@ export class ProjectController {
       };
     }
 
-    // video-mp4 or video-webm-alpha (primary 5-second video flow)
+    // video-mp4 or video-webm-alpha (primary 10-second video flow)
     const videoResult = await this.engine.renderVideo({
       stickerBytes,
       stickerFormat: sticker.format,
@@ -580,7 +580,7 @@ export class ProjectController {
 
     return {
       profile: profileId,
-      fileName: `${safeName}-5s.${videoResult.extension}`,
+      fileName: `${safeName}-10s.${videoResult.extension}`,
       mimeType: videoResult.mimeType,
       bytes: videoResult.bytes,
       durationMs: videoResult.durationMs

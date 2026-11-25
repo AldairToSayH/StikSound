@@ -6,7 +6,7 @@ This document records third-party software, codecs, and libraries bundled or use
 
 ## Desktop & Native Media Policy
 
-- **FFmpeg (LGPL build, no `--enable-gpl`)**: Used as a dynamically linked sidecar binary for 5-second video muxing/encoding. Licensed under LGPLv2.1+.
+- **FFmpeg (LGPL build, no `--enable-gpl`)**: Used as a dynamically linked sidecar binary for video muxing/encoding. Licensed under LGPLv2.1+.
 - **Native OS Encoders**: Windows Media Foundation (`h264_mf`) and Apple VideoToolbox (`h264_videotoolbox`) use system-provided OS frameworks.
 - **OpenH264 (`libopenh264`)**: BSD-2-Clause licensed software fallback for H.264.
 - **libvpx (`libvpx-vp9`) & libopus**: BSD-3-Clause licensed codecs for WebM Alpha (`yuva420p` + Opus) and Ogg Opus.

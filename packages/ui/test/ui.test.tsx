@@ -121,7 +121,7 @@ describe("StikSoundMinimalApp UI", () => {
     fireEvent.change(urlInput, { target: { value: "https://www.myinstants.com/en/instant/test/" } });
     fireEvent.submit(urlInput.closest("form")!);
 
-    await waitFor(() => expect(screen.getByTestId("duration-readout").textContent).toContain("5.0s / 5.0s"));
+    await waitFor(() => expect(screen.getByTestId("duration-readout").textContent).toContain("10.0s / 10.0s"));
     expect(okArrowBtn.disabled).toBe(false);
     expect(downloadBtn.disabled).toBe(false);
 

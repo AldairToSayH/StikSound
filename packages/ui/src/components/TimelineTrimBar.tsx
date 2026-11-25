@@ -1,7 +1,7 @@
 import React, { useMemo, useRef } from "react";
 import { LIMITS, type PeakBuckets } from "@stiksound/core";
 
-export interface Timeline5sBarProps {
+export interface TimelineTrimBarProps {
   hasAudio: boolean;
   durationMs: number;
   startMs: number;
@@ -28,7 +28,7 @@ function formatSec(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-export const Timeline5sBar: React.FC<Timeline5sBarProps> = ({
+export const TimelineTrimBar: React.FC<TimelineTrimBarProps> = ({
   hasAudio,
   durationMs,
   startMs,
@@ -175,7 +175,7 @@ export const Timeline5sBar: React.FC<Timeline5sBarProps> = ({
             <input
               type="range"
               data-testid="trim-slider"
-              aria-label="5s window position"
+              aria-label={`${formatSec(maxWindowMs)} window position`}
               className="stik-trim-slider"
               min={0}
               max={Math.max(0, durationMs - maxWindowMs)}
@@ -189,7 +189,7 @@ export const Timeline5sBar: React.FC<Timeline5sBarProps> = ({
           )}
 
           <span data-testid="duration-readout" className="stik-duration-pill">
-            {formatSec(selectedMs)} / 5.0s
+            {formatSec(selectedMs)} / {formatSec(maxWindowMs)}
           </span>
         </div>
       )}

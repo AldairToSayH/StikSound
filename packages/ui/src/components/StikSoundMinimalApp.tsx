@@ -16,7 +16,7 @@ import {
 } from "@stiksound/core";
 import enLocale from "../locales/en.json";
 import esLocale from "../locales/es.json";
-import { Timeline5sBar } from "./Timeline5sBar";
+import { TimelineTrimBar } from "./TimelineTrimBar";
 
 export interface ShellBridge {
   saveArtifact(artifact: ExportArtifact): Promise<string | void>;
@@ -724,7 +724,7 @@ export const StikSoundMinimalApp: React.FC<StikSoundMinimalAppProps> = ({
         </div>
       )}
 
-      <Timeline5sBar
+      <TimelineTrimBar
         hasAudio={Boolean(audio)}
         durationMs={audio?.duration_ms ?? 0}
         startMs={assoc?.start_ms ?? 0}

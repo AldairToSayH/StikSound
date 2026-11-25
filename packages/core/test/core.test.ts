@@ -38,7 +38,7 @@ function makeFakeEngine(overrides: Partial<MediaEngine> = {}): MediaEngine {
       if (bytes[0] === 0xff && bytes[1] === 0x00) {
         throw new StikSoundError("unsupported-audio", "Not valid audio");
       }
-      const durationMs = bytes.byteLength === 4 ? 30_000 : 2500;
+      const durationMs = bytes.byteLength === 4 ? 30_000 : bytes.byteLength === 5 ? 10_000 : 2500;
       return { format: "mp3", duration_ms: durationMs, sample_rate: 44100, channels: 2 };
     },
     async waveform() {
@@ -86,10 +86,10 @@ function makeFakeEngine(overrides: Partial<MediaEngine> = {}): MediaEngine {
 }
 
 describe("packages/core domain and use cases", () => {
-  it("frames default audio trim to max 5000 ms and slides window cleanly", () => {
+  it("frames default audio trim to max 10000 ms and slides window cleanly", () => {
     expect(defaultTrimForDuration(30_000)).toEqual({
       start_ms: 0,
-      end_ms: 5000,
+      end_ms: 10_000,
       volume: 1,
       fade_in_ms: 0,
       fade_out_ms: 0
@@ -101,9 +101,9 @@ describe("packages/core domain and use cases", () => {
       fade_in_ms: 0,
       fade_out_ms: 0
     });
-    expect(slideTrimWindow(12000, 5000, 14000)).toEqual({
-      start_ms: 9000,
-      end_ms: 14000
+    expect(slideTrimWindow(25_000, 10_000, 30_000)).toEqual({
+      start_ms: 20_000,
+      end_ms: 30_000
     });
   });
 
@@ -142,15 +142,27 @@ describe("packages/core domain and use cases", () => {
     expect(project.manifest.stickers[0]!.source_name).toBe("ok.png");
   });
 
-  it("TC-014: rejects trim selections above 5000 ms", async () => {
+  it("TC-014: accepts 10000 ms selections and rejects longer ranges", async () => {
     const ctrl = new ProjectController(makeFakeEngine());
     let project = createProject("TrimTest");
     project = await ctrl.importSticker(project, new Uint8Array([0x89, 0x50, 0x4e, 0x47]), "ok.png");
     project = await ctrl.importAudioFile(project, new Uint8Array([1, 2, 3, 4]), "30s.mp3");
 
-    expect(() => ctrl.updateAudioEdit(project, { start_ms: 0, end_ms: 6000 })).toThrowError(
+    expect(() => ctrl.updateAudioEdit(project, { start_ms: 0, end_ms: 10_000 })).not.toThrow();
+    expect(() => ctrl.updateAudioEdit(project, { start_ms: 0, end_ms: 10_001 })).toThrowError(
       /trim-out-of-range/
     );
+  });
+
+  it("imports an exact 10-second audio without forcing a shorter trim", async () => {
+    const ctrl = new ProjectController(makeFakeEngine());
+    let project = createProject("TenSeconds");
+    project = await ctrl.importSticker(project, new Uint8Array([0x89, 0x50, 0x4e, 0x47]), "ok.png");
+    project = await ctrl.importAudioFile(project, new Uint8Array([1, 2, 3, 4, 5]), "10s.mp3");
+
+    expect(project.manifest.audios[0]!.duration_ms).toBe(10_000);
+    expect(project.manifest.associations[0]!.start_ms).toBe(0);
+    expect(project.manifest.associations[0]!.end_ms).toBe(10_000);
   });
 
   it("exports video-mp4 by default, supports sound-bundle (TC-008), and blocks native-sound-sticker", async () => {
@@ -162,8 +174,8 @@ describe("packages/core domain and use cases", () => {
 
     const mp4 = await ctrl.exportProject(project);
     expect(mp4.profile).toBe("video-mp4");
-    expect(mp4.fileName).toBe("my-sound-5s.mp4");
-    expect(mp4.durationMs).toBe(5000);
+    expect(mp4.fileName).toBe("my-sound-10s.mp4");
+    expect(mp4.durationMs).toBe(10_000);
 
     const bundle = await ctrl.exportProject(project, "sound-bundle");
     expect(bundle.fileName).toBe("my-sound-stiksound.zip");
@@ -188,7 +200,7 @@ describe("packages/core domain and use cases", () => {
     project = await ctrl.importAudioFile(project, new Uint8Array([1, 2, 3, 4]), "30s.mp3");
     const savedZip = await ctrl.saveProject(project);
     const reopened = await ctrl.openProject(savedZip);
-    expect(reopened.manifest.associations[0]!.end_ms).toBe(5000);
+    expect(reopened.manifest.associations[0]!.end_ms).toBe(10_000);
 
     const badManifest = structuredClone(project.manifest);
     badManifest.stickers[0]!.file = "assets/../etc/passwd";

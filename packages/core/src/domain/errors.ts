@@ -91,22 +91,22 @@ export const ERROR_CATALOG: Record<StikSoundErrorCode, Record<LocaleCode, Locali
   },
   "trim-out-of-range": {
     es: {
-      title: "El fragmento seleccionado debe durar entre 0.1 s y 5.0 s.",
-      action: "Ajusta la barra de tiempo para encuadrar el audio dentro de 5 segundos."
+      title: "El fragmento seleccionado debe durar entre 0.1 s y 10.0 s.",
+      action: "Ajusta la barra de tiempo para encuadrar el audio dentro de 10 segundos."
     },
     en: {
-      title: "The selected audio range must be between 0.1 s and 5.0 s.",
-      action: "Adjust the timeline handles so the selection fits within 5 seconds."
+      title: "The selected audio range must be between 0.1 s and 10.0 s.",
+      action: "Adjust the timeline handles so the selection fits within 10 seconds."
     }
   },
   "sticker-too-large": {
     es: {
       title: "El sticker WebP supera el límite de 100 KB requerido por WhatsApp.",
-      action: "Exporta como Video 5 s o usa una imagen más simple."
+      action: "Exporta como Video 10 s o usa una imagen más simple."
     },
     en: {
       title: "The WebP sticker could not fit under WhatsApp's 100 KB limit.",
-      action: "Export as a 5s Video or try a simpler image."
+      action: "Export as a 10s Video or try a simpler image."
     }
   },
   "package-invalid": {
@@ -122,11 +122,11 @@ export const ERROR_CATALOG: Record<StikSoundErrorCode, Record<LocaleCode, Locali
   "export-unsupported": {
     es: {
       title: "La exportación nativa directa a WhatsApp aún no está disponible.",
-      action: "Exporta el Video de 5 s y súbelo manualmente como sticker con audio en WhatsApp."
+      action: "Exporta el Video de 10 s y súbelo manualmente como sticker con audio en WhatsApp."
     },
     en: {
       title: "Direct native WhatsApp sticker export is not supported yet.",
-      action: "Export the 5s Video and upload it in WhatsApp as a sound sticker."
+      action: "Export the 10s Video and upload it in WhatsApp as a sound sticker."
     }
   }
 };

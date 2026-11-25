@@ -136,9 +136,9 @@ jobs:
             | **Google Chrome / Edge / Brave** | `StikSound-*-chrome-extension.zip` | Descomprime el ZIP, abre `chrome://extensions/`, activa **Modo de desarrollador** y pulsa **Cargar descomprimida** seleccionando la carpeta descomprimida. |
 
             ### Qué incluye esta versión
-            - Soporte para stickers **PNG con transparencia**, **WebP**, **JPG** y **GIF animado** (bucle de hasta 5 segundos).
+            - Soporte para stickers **PNG con transparencia**, **WebP**, **JPG** y **GIF animado** (en bucle durante el fragmento exportado, hasta 10 segundos).
             - Encuadre `1:1` automático desde el centro o moviendo el mouse encima **sin hacer clic**.
             - Selector directo de transparencia (**Transparente**, **Blanco**, **Negro** o **Color**).
-            - Recorte de audio local (MP3/WAV/OGG/M4A) o enlace de **MyInstants** en ventana de **5 segundos**.
+            - Recorte de audio local (MP3/WAV/OGG/M4A) o enlace de **MyInstants** en ventana de **10 segundos**.
             - Flecha **`➔`** para previsualizar y copiar directo al portapapeles (`Ctrl+V` / `Cmd+V` en WhatsApp) y botón **`⬇`** para descargar eligiendo el formato (MP4, WebM transparente, ZIP o WebP).
           files: artifacts/*

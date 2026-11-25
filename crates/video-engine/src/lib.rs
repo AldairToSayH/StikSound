@@ -4,7 +4,7 @@ use std::process::Command;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-pub const MAX_VIDEO_DURATION_MS: u32 = 5_000;
+pub const MAX_VIDEO_DURATION_MS: u32 = 10_000;
 pub const MIN_VIDEO_DURATION_MS: u32 = 100;
 pub const STICKER_PX: u32 = 512;
 
@@ -201,9 +201,9 @@ pub fn run_ffmpeg_mux(ffmpeg_bin: &Path, req: &VideoMuxRequest) -> Result<(), Vi
     Ok(())
 }
 
-/// Pure-Rust, zero-dependency self-contained 5-second AVI (DIB RGB24 + PCM 16-bit audio)
+/// Pure-Rust, zero-dependency self-contained AVI (DIB RGB24 + PCM 16-bit audio)
 /// writer for environments without an external FFmpeg binary.
-pub fn encode_self_contained_video_5s(
+pub fn encode_self_contained_video(
     rgba_frames: &[(&[u8], u32)],
     pcm_samples: &[i16],
     sample_rate: u32,
@@ -412,21 +412,23 @@ mod tests {
             audio_path: base.join("assets/aud_b.mp3"),
             output_path: tmp.join("out.mp4"),
             start_ms: 500,
-            end_ms: 5500,
+            end_ms: 10_500,
             matte_color_hex: "#FFFFFF".to_string(),
             profile: VideoContainerProfile::VideoMp4,
         }
     }
 
     #[test]
-    fn builds_structured_mp4_args_for_5s_clip() {
+    fn builds_structured_mp4_args_for_10s_clip() {
         let req = sample_req();
         let args = build_ffmpeg_args(&req).unwrap();
         assert!(args.contains(&"-loop".to_string()));
         assert!(args.contains(&"0.500".to_string()));
-        assert!(args.contains(&"5.000".to_string()));
+        assert!(args.contains(&"10.000".to_string()));
         assert!(args.contains(&"+faststart".to_string()));
-        assert!(args.iter().any(|a| a.contains("yuv420p") && a.contains("0xFFFFFF")));
+        assert!(args
+            .iter()
+            .any(|a| a.contains("yuv420p") && a.contains("0xFFFFFF")));
     }
 
     #[test]
@@ -443,9 +445,9 @@ mod tests {
     }
 
     #[test]
-    fn rejects_over_5s_and_path_traversal() {
+    fn rejects_over_10s_and_path_traversal() {
         let mut over = sample_req();
-        over.end_ms = 6000;
+        over.end_ms = 11_500;
         assert!(matches!(
             build_ffmpeg_args(&over),
             Err(VideoEngineError::TrimOutOfRange(_))
@@ -460,10 +462,10 @@ mod tests {
     }
 
     #[test]
-    fn test_self_contained_video_5s_without_ffmpeg() {
+    fn test_self_contained_video_10s_without_ffmpeg() {
         let frame = vec![255u8; 64 * 64 * 4];
-        let pcm = vec![1000i16; 48000 * 5];
-        let avi = encode_self_contained_video_5s(&[(&frame, 500)], &pcm, 48000, 64, 64).unwrap();
+        let pcm = vec![1000i16; 48000 * 10];
+        let avi = encode_self_contained_video(&[(&frame, 500)], &pcm, 48000, 64, 64).unwrap();
         assert!(avi.starts_with(b"RIFF"));
         assert_eq!(&avi[8..12], b"AVI ");
         assert!(avi.windows(4).any(|w| w == b"vids"));

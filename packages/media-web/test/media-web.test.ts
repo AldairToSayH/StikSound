@@ -90,33 +90,34 @@ describe("packages/media-web", () => {
     expect(matted[3]).toBe(255);
   });
 
-  it("schedules looping GIF frames across exact 5-second video duration", () => {
+  it("schedules looping GIF frames across exact 10-second video duration", () => {
     const schedule = scheduleGifFramesForDuration(
       [
         { frameIndex: 0, delayMs: 500 },
         { frameIndex: 1, delayMs: 500 }
       ],
-      5000
+      10_000
     );
-    expect(schedule).toHaveLength(10);
+    expect(schedule).toHaveLength(20);
     const totalUs = schedule.reduce((sum, s) => sum + s.durationUs, 0);
-    expect(totalUs).toBe(5_000_000);
+    expect(totalUs).toBe(10_000_000);
   });
 
   it("trims WAV audio within 50 ms tolerance and rejects Zip-Slip (SEC-006)", async () => {
-    const samples = new Float32Array(48000 * 7).fill(0.25);
-    const wav = encodeWavBytes({ sampleRate: 48000, channels: 1, samples, durationMs: 7000 });
+    const samples = new Float32Array(48000 * 12).fill(0.25);
+    const wav = encodeWavBytes({ sampleRate: 48000, channels: 1, samples, durationMs: 12_000 });
     const engine = new WebMediaEngine();
 
     const probe = await engine.probeAudio(wav);
     expect(probe.format).toBe("wav");
-    expect(probe.duration_ms).toBe(7000);
+    expect(probe.duration_ms).toBe(12_000);
 
     const peaks = await engine.waveform(wav);
     expect(peaks.buckets).toBe(1024);
 
-    const trimmed = trimPcmSamples(samples, 48000, 1000, 4200, 1);
-    expect(Math.abs(trimmed.durationMs - 3200)).toBeLessThanOrEqual(50);
+    const trimmed = trimPcmSamples(samples, 48000, 1000, 11_000, 1);
+    expect(Math.abs(trimmed.durationMs - 10_000)).toBeLessThanOrEqual(50);
+    expect(() => trimPcmSamples(samples, 48000, 1000, 11_001, 1)).toThrowError(/trim-out-of-range/);
 
     const evilZip = zipSync({ "../outside.txt": new Uint8Array([1, 2, 3]) });
     await expect(engine.unzip(evilZip)).rejects.toMatchObject({ code: "package-invalid" });

@@ -4,86 +4,383 @@
 
 # StikSound
 
-**Ponle sonido de hasta 5 segundos a cualquier sticker PNG o GIF animado para WhatsApp — pega tu sticker, elige un audio o link de MyInstants y pégalo directo en WhatsApp sin instalar nada extra.**
+**Crea stickers con sonido de hasta 10 segundos a partir de un PNG, JPG, WebP o GIF animado: pega tu sticker, elige un audio local o un enlace de MyInstants, recorta el fragmento exacto y exporta todo localmente.**
 
-[![Release](https://img.shields.io/github/v/release/SilverFeit/StikSound?style=flat-square&label=Download&color=25D366)](https://github.com/SilverFeit/StikSound/releases/latest)
-[![Platforms](https://img.shields.io/badge/Platforms-Windows%20%7C%20macOS%20%7C%20Chrome-25D366?style=flat-square)](#qué-necesitas-instalar)
-[![Zero Deps](https://img.shields.io/badge/Dependencias-Cero%20(100%25%20Autocontenido)-0ea5e9?style=flat-square)](#cómo-funciona-en-3-pasos)
-[![Privacy](https://img.shields.io/badge/Privacidad-100%25%20Local%20(Sin%20Nube)-10b981?style=flat-square)](#privacidad-y-seguridad)
+[![Release](https://img.shields.io/github/v/release/jorgeluismorales/StikSound?style=flat-square&label=Download&color=25D366)](https://github.com/jorgeluismorales/StikSound/releases/latest)
+[![Platforms](https://img.shields.io/badge/Platforms-Windows%20%7C%20macOS%20%7C%20Chrome-25D366?style=flat-square)](#instalación)
+[![Local Processing](https://img.shields.io/badge/Procesamiento-100%25%20local-10b981?style=flat-square)](#privacidad-y-seguridad)
 [![License](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-6366f1?style=flat-square)](LICENSE-MIT)
 
-[**Descargar (Windows, macOS & Chrome)**](https://github.com/SilverFeit/StikSound/releases/latest) · [**Cómo funciona (3 pasos)**](#cómo-funciona-en-3-pasos) · [**Qué puedes hacer**](#qué-puedes-hacer) · [**Extensión de Chrome**](#usar-como-extensión-de-chrome) · [**Documentación técnica**](#para-desarrolladores)
+[**Descargar**](https://github.com/jorgeluismorales/StikSound/releases/latest) · [**Guía de uso**](#guía-de-uso-paso-a-paso) · [**Cómo funciona internamente**](#cómo-funciona-internamente) · [**Desarrollo**](#desarrollo)
 
 </div>
 
 ---
 
-## ¿Para qué sirve StikSound?
+## Qué hace StikSound
 
-Si ya tienes un sticker (o un meme en **PNG** o **GIF animado**) y quieres agregarle un sonido gracioso de **hasta 5 segundos** para subirlo en WhatsApp, **StikSound** lo hace en segundos desde una pantalla súper simple:
+StikSound combina **una imagen cuadrada** y **un fragmento de audio de hasta 10 segundos** en un archivo descargable o copiable. Está pensado para preparar stickers con sonido para WhatsApp sin usar editores de video complejos y sin subir tus archivos a un servicio externo.
 
-- **Sin programas complicados de edición de video.**
-- **Sin instalar FFmpeg ni herramientas adicionales.**
-- **Sin subir tus imágenes o audios a páginas externas:** todo ocurre en tu computadora o navegador.
+Concretamente permite:
 
----
+- Usar stickers o memes en **PNG, JPG/JPEG, WebP o GIF**.
+- Trabajar con **GIF animados**, reproduciéndolos en bucle durante el fragmento exportado.
+- Agregar audio desde un archivo local **MP3, WAV, OGG, M4A o AAC**.
+- Pegar un enlace de **MyInstants** y descargar ese sonido de forma validada.
+- Seleccionar un fragmento de audio de **0,1 a 10 segundos**.
+- Exportar un **MP4 compatible**, un **WebM con transparencia**, un **paquete ZIP** o un **WebP estático**.
+- Guardar y reabrir proyectos `.stiksound.zip` con la imagen, el audio y la configuración del recorte.
 
-## Cómo funciona en 3 pasos
-
-1. **Pega tu sticker (`Ctrl + V` / `Cmd + V`):**
-   - También puedes arrastrar o elegir archivos **PNG** (con transparencia), **GIF animado**, **WebP** o **JPG**.
-   - Si tu imagen no es cuadrada, **solo mueve el mouse encima (sin hacer clic)** para encuadrar la parte exacta `1:1` que quieres mostrar.
-   - Si es PNG/GIF transparente, elige abajo si quieres conservar **fondo Transparente** o usar fondo **Blanco, Negro o cualquier color**.
-2. **Agrega el sonido (máximo 5 segundos):**
-   - Pega directamente un enlace de **MyInstants**, o arrastra un archivo **MP3, WAV, OGG o M4A**.
-   - Si el audio dura más de 5 segundos, desliza la barra inferior para escoger los mejores 5 segundos.
-3. **Pégalo en WhatsApp (`➔`) o descárgalo (`⬇`):**
-   - Pulsa la flecha **`➔`** para ver la vista previa y **copiarlo directo al portapapeles** en el formato más compatible: luego solo presiona `Ctrl + V` en el creador de stickers de WhatsApp.
-   - O pulsa **`⬇`** si prefieres elegir el formato exacto para descargar (**MP4 compatible**, **WebM alta calidad / transparente**, **Paquete ZIP** o **WebP**).
-   - ¿Quieres empezar otro? Pulsa **`✕`** arriba a la izquierda para limpiar todo al instante.
+> **Nota importante sobre WhatsApp:** WhatsApp no publica una API oficial de escritorio para crear stickers con sonido. StikSound prepara y copia/descarga el archivo localmente; la forma exacta de importarlo y la compatibilidad final pueden depender de la versión de WhatsApp que estés usando. El perfil experimental `native-sound-sticker` existe en el código, pero está deshabilitado hasta que exista una verificación compatible.
 
 ---
 
-## Qué puedes hacer
+## Guía de uso paso a paso
 
-| Función | Qué significa para ti |
+### 1. Carga el sticker
+
+Tienes tres formas de cargar la imagen:
+
+- Pegarla directamente con `Ctrl + V` o `Cmd + V`.
+- Arrastrarla sobre la zona central.
+- Hacer clic en la zona central y elegir el archivo.
+
+StikSound analiza los bytes reales del archivo, no solamente su extensión. Así comprueba el formato, las dimensiones, si tiene transparencia y si es un GIF animado.
+
+### 2. Encuadra la imagen en formato 1:1
+
+Los stickers usan formato cuadrado. Si la imagen original no es cuadrada:
+
+- StikSound calcula automáticamente un recorte `1:1` centrado.
+- Puedes mover el mouse sobre la imagen, **sin hacer clic**, para desplazar el encuadre horizontal o verticalmente.
+- La salida nunca se escala hacia arriba artificialmente: usa el lado menor de la imagen, con un máximo de `512 × 512 px`.
+- Las dimensiones se redondean a números pares para evitar incompatibilidades con codificadores de video.
+
+### 3. Agrega el audio
+
+También tienes tres opciones:
+
+- Arrastrar un archivo de audio sobre la barra inferior.
+- Pulsar el botón **Audio** y elegir un archivo.
+- Pegar un enlace válido de MyInstants.
+
+Límites del archivo de origen:
+
+| Regla | Límite |
+| --- | ---: |
+| Tamaño máximo del audio | 25 MB |
+| Duración máxima del audio importado | 3 minutos |
+| Duración mínima del fragmento seleccionado | 0,1 segundos |
+| Duración máxima del fragmento exportado | 10 segundos |
+
+Si el audio dura 10 segundos o menos, StikSound selecciona el audio completo automáticamente. Si dura más, selecciona los primeros 10 segundos y te permite mover esa ventana.
+
+### 4. Ajusta el fragmento de sonido
+
+La barra inferior muestra una forma de onda calculada a partir del audio real:
+
+- Las barras representan picos mínimos y máximos en 1024 divisiones del audio.
+- Al hacer clic sobre la onda, la ventana de recorte se centra cerca de ese punto.
+- Si el audio supera los 10 segundos, aparece un deslizador para mover la ventana a lo largo del archivo.
+- El indicador de la derecha muestra `seleccionado / máximo`, por ejemplo `10.0s / 10.0s`.
+- El botón de reproducción escucha exactamente el tramo seleccionado.
+
+### 5. Elige el fondo
+
+Si el sticker tiene transparencia aparecen estas opciones:
+
+- **Transparente:** exporta WebM con canal alfa cuando el navegador o WebView lo admite.
+- **Blanco / Negro / Color:** compone la imagen sobre un fondo sólido para MP4.
+
+MP4 no conserva transparencia real; por eso la transparencia se rellena con el color elegido. WebM sí puede conservar canal alfa mediante VP9 cuando WebCodecs está disponible.
+
+### 6. Previsualiza, copia o descarga
+
+Botones principales:
+
+| Botón | Acción |
 | --- | --- |
-| **Stickers estáticos y GIFs** | Funciona con PNG transparente, WebP, JPG y GIFs animados en bucle de hasta 5 segundos. |
-| **Resolución inteligente `1:1`** | Respeta el tamaño original de tu imagen hasta un máximo de `512 × 512 px` sin deformarla ni pixelarla. |
-| **Encuadre con solo pasar el mouse** | Las imágenes rectangulares se centran solas y puedes mover el recorte `1:1` moviendo el cursor encima. |
-| **Transparencia a tu elección** | Conserva transparencia real (WebM) o elige fondo blanco, negro o personalizado (MP4 compatible). |
-| **Enlaces de MyInstants** | Pega el link del sonido y StikSound lo descarga de forma segura para que puedas recortarlo. |
-| **Copiar directo o descargar** | Flecha `➔` para copiar y pegar al instante; botón `⬇` para elegir calidad/formato al guardar. |
+| `✕` | Borra sticker, audio, recorte y vista previa para empezar de cero. |
+| `➔` | Genera la vista previa compatible e intenta copiar el resultado al portapapeles. |
+| `⬇` | Abre el selector de formato y descarga el archivo elegido. |
+| `⋯` | Abre opciones de proyecto, idioma y licencias. |
+
+Si el sistema operativo o el navegador no permite copiar videos al portapapeles, usa `⬇` y comparte el archivo descargado manualmente.
 
 ---
 
-## Qué necesitas instalar
+## Formatos de entrada y salida
 
-- **En Windows / macOS:** nada extra. Solo abre la aplicación **StikSound** (usa el motor gráfico nativo del sistema).
-- **En Google Chrome:** puedes cargar la extensión sin instalar programas de escritorio.
+### Entrada de imagen
 
-### Usar como extensión de Chrome
+| Formato | Compatibilidad |
+| --- | --- |
+| PNG | Compatible, incluida transparencia. |
+| JPG/JPEG | Compatible, sin transparencia. |
+| WebP | Compatible como imagen de entrada; la animación WebP no es el flujo principal de v1. |
+| GIF | Compatible; los GIF animados se decodifican por cuadros y se repiten en bucle. |
 
-1. Descarga **`StikSound-*-chrome-extension.zip`** desde [**Releases**](https://github.com/SilverFeit/StikSound/releases/latest) y descomprímelo en una carpeta.
-2. Abre `chrome://extensions/` en Google Chrome (o Edge/Brave) y activa **Modo de desarrollador**.
-3. Haz clic en **Cargar descomprimida** y selecciona la carpeta que descomprimiste.
-4. Pulsa el ícono de **StikSound** en la barra de tu navegador para abrirlo al instante.
+Límites de seguridad para imágenes:
+
+- 20 MB por archivo.
+- Máximo 8000 px de ancho o alto.
+- Máximo 40 megapíxeles decodificados.
+
+### Entrada de audio
+
+| Formato | Compatibilidad |
+| --- | --- |
+| MP3 | Compatible a través del decodificador del navegador/WebView o Rust. |
+| WAV | Compatible; además existe un decodificador PCM de respaldo. |
+| OGG | Compatible cuando el decodificador de la plataforma lo admite. |
+| M4A/AAC | Compatible cuando el decodificador de la plataforma lo admite. |
+
+### Salida
+
+| Formato | Uso recomendado | Qué contiene |
+| --- | --- | --- |
+| MP4 | Máxima compatibilidad | Video cuadrado con fondo sólido y audio AAC cuando WebCodecs está disponible. |
+| WebM | Alta calidad/transparencia | Video VP9 con alfa y audio Opus cuando WebCodecs está disponible. |
+| ZIP `.stiksound.zip` | Paquete portable/proyecto | Imagen, audio y metadatos del proyecto o paquete. |
+| WebP | Sticker estático | Una imagen `1:1` sin audio, optimizada para entrar en el límite de 100 KB. |
+
+La duración del video exportado sigue al fragmento de audio seleccionado, con una tolerancia de validación de ±50 ms.
+
+---
+
+## Cómo funciona internamente
+
+### Flujo general
+
+```text
+Sticker/Imagen + Audio
+        │
+        ▼
+Validación y lectura de formatos
+        │
+        ├─ Imagen: dimensiones, alpha, animación y recorte 1:1
+        │
+        └─ Audio: duración, canales, sample rate, mezcla mono y forma de onda
+        │
+        ▼
+Proyecto en memoria
+        │
+        ├─ sticker
+        ├─ audio
+        ├─ start_ms / end_ms del fragmento
+        └─ formato de exportación elegido
+        │
+        ▼
+Validación antes de exportar
+        │
+        ▼
+Renderizado local
+        │
+        ├─ video MP4/WebM
+        ├─ paquete ZIP
+        └─ WebP estático
+        │
+        ▼
+Vista previa, copia o descarga
+```
+
+### Pipeline de imagen
+
+1. Se leen los bytes del archivo y se identifica el formato por cabecera.
+2. Se rechazan imágenes demasiado grandes o potencialmente peligrosas por dimensiones.
+3. Se calcula el recorte cuadrado desde `crop_x` y `crop_y` normalizados.
+4. En imágenes estáticas se dibuja un único cuadro.
+5. En GIF animados se decodifican los cuadros y sus tiempos; luego se programa una secuencia en bucle que cubre exactamente la duración seleccionada.
+6. Para MP4 se compone sobre el color de fondo elegido; para WebM se conserva el canal alfa cuando el codificador lo permite.
+
+### Pipeline de audio
+
+1. Se prueba el archivo y se obtiene duración, sample rate y número de canales.
+2. El audio se decodifica y se mezcla a mono.
+3. Se calculan 1024 picos para dibujar la forma de onda.
+4. El fragmento se recorta con `start_ms` y `end_ms` enteros en milisegundos.
+5. El fragmento se remuestrea a **48 kHz mono**, que es la base usada por la exportación.
+6. La validación exige una selección entre **100 ms y 10.000 ms**.
+
+### Codificación de video
+
+StikSound usa dos rutas locales, en este orden:
+
+1. **WebCodecs + muxers TypeScript:** cuando la plataforma expone `VideoEncoder` y `AudioEncoder`, genera MP4 H.264/AAC o WebM VP9/Opus sin invocar servicios externos.
+2. **Canvas + MediaRecorder:** si WebCodecs no está disponible, dibuja el canvas, captura el stream y graba audio/video con los códecs que soporte esa plataforma.
+
+Si ninguna de las dos rutas existe, la exportación de video devuelve un error estructurado en lugar de fallar silenciosamente.
+
+### Proyectos `.stiksound.zip`
+
+Un proyecto guardado contiene:
+
+```text
+manifest.json
+assets/<archivo-de-imagen>
+assets/<archivo-de-audio>
+```
+
+El manifiesto guarda:
+
+- identificadores y nombres de assets;
+- formato, dimensiones y transparencia de la imagen;
+- duración, sample rate y origen del audio;
+- `start_ms`, `end_ms`, volumen y fades;
+- perfil de exportación activo.
+
+Al abrirlo se validan las rutas internas para impedir entradas maliciosas como `../` y se recalcula la forma de onda.
+
+---
+
+## Arquitectura del repositorio
+
+```text
+apps/
+  desktop/       App Tauri para Windows/macOS
+  extension/     Extensión Chrome Manifest V3
+packages/
+  core/          Modelo de proyecto, invariantes, validación y casos de uso
+  ui/            Editor React, barra de recorte y textos i18n
+  media-web/     Sniffing, decodificación, trim, waveform, mux y ZIP en TypeScript
+  providers/     Extracción y política de URLs de MyInstants
+crates/
+  audio-engine/  Probe/decodificación/trim de audio en Rust
+  image-engine/  Probe y utilidades de imagen en Rust
+  video-engine/  Validación y mux de video en Rust
+  project-store/ Escritura atómica y paquetes en Rust
+docs/            Requisitos, arquitectura, especificaciones y decisiones
+```
+
+La idea principal es que la UI no contiene reglas de negocio: React llama a casos de uso de `packages/core`, y esos casos de uso delegan el trabajo de medios en un motor intercambiable (`WebMediaEngine` o componentes Rust en desktop).
+
+---
+
+## Instalación
+
+### Windows y macOS
+
+1. Abre [**Releases**](https://github.com/jorgeluismorales/StikSound/releases/latest).
+2. Descarga el instalador o ejecutable para tu plataforma:
+   - Windows: archivo `windows-x64`.
+   - macOS: archivo `macos-universal`.
+3. Abre StikSound. No necesitas instalar FFmpeg ni un editor de video aparte para el flujo principal.
+
+En macOS, si aparece el aviso de desarrollador no verificado, haz clic derecho sobre la app y elige **Abrir**.
+
+### Extensión de Chrome, Edge o Brave
+
+1. Descarga `StikSound-*-chrome-extension.zip` desde [**Releases**](https://github.com/jorgeluismorales/StikSound/releases/latest).
+2. Descomprímelo en una carpeta permanente.
+3. Abre `chrome://extensions/`.
+4. Activa **Modo de desarrollador**.
+5. Pulsa **Cargar descomprimida** y selecciona la carpeta descomprimida.
+6. Haz clic en el icono de StikSound: se abrirá el editor en una pestaña.
 
 ---
 
 ## Privacidad y seguridad
 
-- Tus stickers y audios **nunca salen de tu equipo** ni se suben a servidores de terceros.
-- El único acceso a internet ocurre cuando tú pegas explícitamente un enlace de `myinstants.com`, protegido contra enlaces maliciosos.
+- No existe un servidor de StikSound que reciba tus imágenes o audios.
+- El procesamiento de medios se hace localmente en la app o en la pestaña de la extensión.
+- La única descarga de red integrada es MyInstants, y solo cuando pegas explícitamente un enlace.
+- MyInstants está restringido por política de URLs:
+  - solo HTTPS;
+  - solo `myinstants.com` y `www.myinstants.com`;
+  - sin usuario/contraseña embebidos;
+  - sin puertos distintos de 443;
+  - máximo 2 redirecciones;
+  - máximo 25 MB por audio;
+  - tiempo máximo de descarga de 20 segundos.
+- En desktop, la descarga se realiza desde el backend Rust para evitar limitaciones de CORS y aplica validaciones adicionales de direcciones IP privadas o reservadas.
+- Los paquetes ZIP se validan contra path traversal antes de abrirse.
 - Los sonidos descargados desde MyInstants pertenecen a sus respectivos autores.
 
 ---
 
-## Para desarrolladores
+## Desarrollo
 
-- Índice técnico y especificaciones completas: [docs/README.md](docs/README.md)
-- Tests TypeScript/UI: `npm install && npm test && npm run typecheck`
-- Tests Rust: `cargo test --workspace --exclude stiksound-desktop`
+### Requisitos
+
+- Node.js 22 o superior.
+- npm 10 o superior.
+- Rust stable.
+- Para compilar la app Tauri en Linux pueden hacer falta las dependencias nativas de WebKitGTK indicadas por la documentación de Tauri; en Windows y macOS se usan los WebViews del sistema.
+
+### Instalar dependencias
+
+```bash
+git clone https://github.com/jorgeluismorales/StikSound.git
+cd StikSound
+npm install
+```
+
+### Ejecutar validaciones
+
+```bash
+npm run typecheck
+npm test
+npm run build
+cargo test --workspace --exclude stiksound-desktop
+```
+
+### Ejecutar la extensión en modo desarrollo
+
+```bash
+npm run build --workspace=@stiksound/extension
+```
+
+Luego carga `apps/extension/dist` como extensión descomprimida desde `chrome://extensions/`.
+
+Para reconstruir automáticamente al editar:
+
+```bash
+npm run dev --workspace=@stiksound/extension
+```
+
+### Ejecutar el frontend desktop con Vite
+
+```bash
+npm run dev --workspace=@stiksound/desktop
+```
+
+### Ejecutar la app Tauri completa
+
+```bash
+cd apps/desktop
+npx tauri dev
+```
+
+### Compilar la app desktop
+
+```bash
+cd apps/desktop
+npx tauri build
+```
+
+---
+
+## Solución de problemas
+
+| Problema | Causa probable | Qué hacer |
+| --- | --- | --- |
+| “Enlace rechazado por seguridad” | La URL no es HTTPS de MyInstants o tiene formato no permitido | Copia el enlace público del instante o el archivo directo desde `myinstants.com`. |
+| “No se pudo leer este audio” | El archivo está corrupto o el códec no existe en esa plataforma | Prueba con MP3 o WAV, o exporta nuevamente el audio desde otra app. |
+| El video transparente sale con fondo | Elegiste MP4 o la plataforma no soporta alfa VP9 | Usa la salida WebM transparente. |
+| El botón copiar no pega en WhatsApp | El navegador/sistema bloquea videos en el portapapeles | Descarga el archivo con `⬇` y compártelo manualmente. |
+| El audio suena recortado | El fragmento seleccionado está limitado a 10 segundos | Mueve la ventana de recorte o usa un audio más corto. |
+| El WebP falla por tamaño | WhatsApp exige stickers estáticos pequeños | Usa una imagen más simple o exporta como video. |
+
+---
+
+## Documentación adicional
+
+- Índice técnico: [docs/README.md](docs/README.md)
+- Arquitectura: [docs/architecture/overview.md](docs/architecture/overview.md)
+- Requisitos funcionales: [docs/requirements/functional-requirements.md](docs/requirements/functional-requirements.md)
+- Exportación: [docs/specifications/export.md](docs/specifications/export.md)
+- Seguridad: [docs/specifications/security.md](docs/specifications/security.md)
+- Plan de pruebas: [docs/qa/test-plan.md](docs/qa/test-plan.md)
 
 ## License
 
